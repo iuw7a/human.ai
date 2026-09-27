@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     let apiUserId: string | null = null;
     const apiKey = req.headers.get("x-api-key");
     if (!sessionUser && apiKey) {
-      const hex = [...(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey)))]
+      const hex = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey)))]
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
       const admin = createAdminSupabase();
