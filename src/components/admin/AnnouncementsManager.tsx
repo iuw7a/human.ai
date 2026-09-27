@@ -142,7 +142,7 @@ export function AnnouncementsManager({ kinds }: { kinds: string[] }) {
             </div>
           </div>
         ))}
-        {rows.length === 0 && <EmptyState text={`No ${kind}s yet.`} />}
+        {rows.length === 0 && <EmptyState text={`No ${kinds.join(" / ")}s yet.`} />}
       </div>
     </div>
   );
