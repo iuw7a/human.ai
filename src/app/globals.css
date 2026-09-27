@@ -148,3 +148,17 @@ body {
   animation: menu-in 0.16s ease-out;
   transform-origin: bottom left;
 }
+
+@keyframes ad-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-ad-in {
+  animation: ad-in 0.5s cubic-bezier(0.21, 1.02, 0.73, 1) both;
+}

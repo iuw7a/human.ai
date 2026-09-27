@@ -8,6 +8,11 @@ export default function LogoutPage() {
   const router = useRouter();
   useEffect(() => {
     const supabase = createClient();
+    fetch("/api/security/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "logout" }),
+    }).catch(() => {});
     supabase.auth.signOut().finally(() => {
       router.push("/");
       router.refresh();

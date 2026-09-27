@@ -16,10 +16,12 @@ export function ChatInput({
   onSend,
   sending,
   placeholder = "Ask Human AI anything...",
+  allowUpload = true,
 }: {
   onSend: (text: string, images: PendingImage[]) => void;
   sending: boolean;
   placeholder?: string;
+  allowUpload?: boolean;
 }) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<PendingImage[]>([]);
@@ -36,7 +38,7 @@ export function ChatInput({
 
   async function handleFiles(files: FileList | null) {
     setError(null);
-    if (!files) return;
+    if (!allowUpload || !files) return;
     for (const file of Array.from(files).slice(0, 4 - images.length)) {
       if (!ACCEPTED.includes(file.type)) {
         setError("Only PNG, JPEG, WebP or GIF images are allowed.");
@@ -132,7 +134,9 @@ export function ChatInput({
             onClick={() => fileRef.current?.click()}
             className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-ink-800 hover:text-white"
             aria-label="Upload image"
-            title="Upload image"
+            title={allowUpload ? "Upload image" : "Image uploads are disabled"}
+            disabled={!allowUpload}
+            style={allowUpload ? undefined : { opacity: 0.35, pointerEvents: "none" }}
           >
             <ImagePlus size={18} />
           </button>

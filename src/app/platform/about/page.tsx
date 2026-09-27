@@ -1,6 +1,9 @@
 import { AppShell } from "@/components/AppShell";
+import { Markdown } from "@/components/Markdown";
+import { getPublishedPage } from "@/lib/pages";
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const custom = await getPublishedPage("about");
   return (
     <AppShell>
       <div className="mx-auto w-full max-w-2xl px-4 py-10 pl-14 lg:pl-4">
@@ -8,8 +11,13 @@ export default function AboutPage() {
           About
         </p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">
-          About Human AI
+          {custom?.title ?? "About Human AI"}
         </h1>
+        {custom ? (
+          <div className="mt-4">
+            <Markdown content={custom.content_md} />
+          </div>
+        ) : (
         <div className="prose-humanai mt-4">
           <p>
             Human AI is an independent AI chat platform built around a simple
@@ -38,6 +46,7 @@ export default function AboutPage() {
             it aims to be genuinely useful, day to day.
           </p>
         </div>
+        )}
       </div>
     </AppShell>
   );

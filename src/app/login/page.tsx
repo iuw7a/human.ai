@@ -20,12 +20,45 @@ function LoginForm() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    // Allow username OR email: resolve usernames server-side first.
+    let loginEmail = email.trim();
+    if (loginEmail && !loginEmail.includes("@")) {
+      try {
+        const r = await fetch("/api/auth/resolve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ identifier: loginEmail }),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error ?? "Unknown username.");
+        loginEmail = j.email;
+      } catch (err) {
+        setLoading(false);
+        setError(err instanceof Error ? err.message : "Unknown username. Use your email address.");
+        return;
+      }
+    }
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+    setLoading(false);
     setLoading(false);
     if (error) {
-      setError(error.message);
+      setError(
+        error.message === "Invalid login credentials"
+          ? "Invalid login credentials. Use your email address (e.g. admin@human.ai) or username."
+          : error.message
+      );
+      fetch("/api/security/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "login_failed", email: loginEmail }),
+      }).catch(() => {});
       return;
     }
+    fetch("/api/security/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "login", email: loginEmail }),
+    }).catch(() => {});
     router.push(params.get("next") ?? "/");
     router.refresh();
   }
@@ -45,16 +78,16 @@ function LoginForm() {
             </p>
           )}
           <div>
-            <label className="label" htmlFor="email">Email</label>
+            <label className="label" htmlFor="email">Email or username</label>
             <input
               id="email"
-              type="email"
+              type="text"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="input"
-              placeholder="you@example.com"
-              autoComplete="email"
+              placeholder="you@example.com or username"
+              autoComplete="username"
             />
           </div>
           <div>

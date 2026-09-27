@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
 import { getModel } from "@/lib/models";
 import { HUMAN_AI_SYSTEM_PROMPT } from "@/lib/systemPrompt";
-import { providerFor } from "@/lib/providers/registry";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createNvidiaProvider } from "@/lib/providers/nvidia";
+import { resolveDbModel, logAppError } from "@/lib/admin";
+import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
 import type { ChatMessageInput } from "@/lib/providers/types";
 
 export const runtime = "nodejs";
@@ -32,29 +33,69 @@ function sanitize(messages: BodyMessage[]): ChatMessageInput[] {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as { modelId?: string; messages?: BodyMessage[] };
-    const modelId = body.modelId ?? "human-ai";
-    const model = getModel(modelId);
-    if (!model) {
-      return Response.json({ error: `Unknown model: ${modelId}` }, { status: 400 });
+    const requestedSlug = body.modelId ?? "human-ai";
+
+    // DB-backed model resolution (falls back to code registry).
+    const dbModel = await resolveDbModel(requestedSlug);
+    const codeModel = getModel(requestedSlug);
+    const resolved = dbModel ?? (codeModel ? { ...codeModel, enabled: true, plan: "free" as const } : null);
+    if (!resolved) {
+      return Response.json({ error: `Unknown model: ${requestedSlug}` }, { status: 400 });
+    }
+    if (dbModel && !dbModel.enabled) {
+      return Response.json({ error: "This model is currently disabled." }, { status: 403 });
     }
     const messages = sanitize(body.messages ?? []);
     if (messages.length === 0) {
       return Response.json({ error: "No messages provided." }, { status: 400 });
     }
 
+    // Auth: Supabase session OR app API key (x-api-key header).
+    const supabase = createServerSupabase();
+    const {
+      data: { user: sessionUser },
+    } = await supabase.auth.getUser();
+    let apiUserId: string | null = null;
+    const apiKey = req.headers.get("x-api-key");
+    if (!sessionUser && apiKey) {
+      const hex = [...(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey)))]
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      const admin = createAdminSupabase();
+      const { data: key } = await admin.from("api_keys").select("id,user_id,enabled").eq("key_hash", hex).single();
+      if (!key || !key.enabled) {
+        return Response.json({ error: "Invalid API key." }, { status: 401 });
+      }
+      apiUserId = key.user_id;
+      const { data: cur } = await admin.from("api_keys").select("usage_count").eq("id", key.id).single();
+      await admin.from("api_keys").update({
+        usage_count: (cur?.usage_count ?? 0) + 1,
+        last_used_at: new Date().toISOString(),
+      }).eq("id", key.id);
+    }
+    const effectiveUserId = sessionUser?.id ?? apiUserId;
+
+    // Plan gate for plus-only models.
+    if (resolved.plan === "plus") {
+      const admin = createAdminSupabase();
+      const owner = effectiveUserId
+        ? (await admin.from("profiles").select("plan").eq("id", effectiveUserId).single()).data?.plan
+        : null;
+      if (owner !== "plus") {
+        return Response.json({ error: "This model requires a Plus plan." }, { status: 403 });
+      }
+    }
+
     // Identity: the full Human AI master system prompt,
-    // plus the user's stored memories (if logged in).
+    // plus the user's stored memories (session or API-key owner).
     let systemContent = HUMAN_AI_SYSTEM_PROMPT;
     try {
-      const supabase = createServerSupabase();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        const { data: memories } = await supabase
+      if (effectiveUserId) {
+        const admin = createAdminSupabase();
+        const { data: memories } = await admin
           .from("memories")
           .select("content")
-          .eq("user_id", user.id)
+          .eq("user_id", effectiveUserId)
           .order("created_at", { ascending: true })
           .limit(20);
         if (memories && memories.length > 0) {
@@ -73,7 +114,7 @@ export async function POST(req: NextRequest) {
       ...messages,
     ];
 
-    const { provider } = providerFor(modelId);
+    const provider = createNvidiaProvider(resolved.providerModelId);
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -92,6 +133,7 @@ export async function POST(req: NextRequest) {
             (e instanceof Error && e.name === "TimeoutError")
               ? "The AI provider timed out. Check your NVIDIA account credits/entitlement for this model and try again."
               : raw;
+          void logAppError("api/chat", raw, { model: resolved.id });
           send(JSON.stringify({ error: friendly }));
         } finally {
           controller.close();
@@ -107,6 +149,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (e) {
+    void logAppError("api/chat", e instanceof Error ? e.message : "Invalid request.");
     return Response.json(
       { error: e instanceof Error ? e.message : "Invalid request." },
       { status: 500 }

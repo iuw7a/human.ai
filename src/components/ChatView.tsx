@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, ThumbsUp, ThumbsDown, Globe, MoreHorizontal, X } from "lucide-react";
 import { ChatInput, type PendingImage } from "./ChatInput";
 import { Markdown } from "./Markdown";
 import { AvatarMark } from "./Logo";
@@ -15,6 +15,131 @@ export interface StoredMessage {
   role: "user" | "assistant";
   content: string;
   images?: { url: string; storagePath?: string }[];
+}
+
+function VoteButtons({ chatId, modelId, excerpt }: { chatId: string; modelId: string; excerpt: string }) {
+  const [voted, setVoted] = useState<"up" | "down" | null>(null);
+  async function vote(rating: "up" | "down") {
+    setVoted(rating);
+    try {
+      await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, model: modelId, rating, excerpt: excerpt.slice(0, 500) }),
+      });
+    } catch {
+      // feedback is optional
+    }
+  }
+  const cls = (active: boolean) =>
+    `flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-ink-800 ${
+      active ? "text-accent" : "text-zinc-500 hover:text-zinc-200"
+    }`;
+  return (
+    <>
+      <button onClick={() => vote("up")} className={cls(voted === "up")} aria-label="Good answer" title="Good answer">
+        <ThumbsUp size={14} />
+      </button>
+      <button onClick={() => vote("down")} className={cls(voted === "down")} aria-label="Bad answer" title="Bad answer">
+        <ThumbsDown size={14} />
+      </button>
+    </>
+  );
+}
+
+interface ActiveAd {
+  id: string;
+  title: string;
+  description: string;
+  image_url: string | null;
+  destination_url: string;
+}
+
+function AdCard({ ad, onDismiss }: { ad: ActiveAd; onDismiss: () => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  let host = "";
+  try {
+    host = new URL(ad.destination_url).hostname.replace(/^www\./, "");
+  } catch {
+    host = "";
+  }
+  const TitleTag = ad.destination_url ? "a" : "span";
+  return (
+    <article className="animate-ad-in group mt-4 flex items-center gap-2 overflow-hidden rounded-xl border border-white/10 bg-ink-900/80 p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-md transition-colors duration-200 hover:border-white/[0.18] sm:gap-2.5 sm:p-2">
+      {ad.image_url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={ad.image_url}
+          alt=""
+          className="h-10 w-10 shrink-0 rounded-lg border border-white/10 object-cover sm:h-12 sm:w-16"
+        />
+      )}
+      <div className="min-w-0 flex-1 py-0.5">
+        <div className="flex items-center gap-2">
+          <Globe size={13} className="shrink-0 text-zinc-500" />
+          <span className="truncate text-xs text-zinc-400">{host || ad.title}</span>
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            <span className="rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400">
+              Ad
+            </span>
+            <span className="relative">
+              <button
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-label="Ad options"
+                className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+              >
+                <MoreHorizontal size={15} />
+              </button>
+              {menuOpen && (
+                <>
+                  <span className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                  <span className="absolute right-0 top-full z-20 mt-1 w-36 overflow-hidden rounded-xl border border-white/10 bg-ink-800 py-1 shadow-2xl">
+                    <button
+                      onClick={() => {
+                        try {
+                          navigator.clipboard.writeText(ad.destination_url);
+                        } catch {
+                          // ignore
+                        }
+                        setMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/[0.06]"
+                    >
+                      Copy link
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onDismiss();
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/[0.06]"
+                    >
+                      <X size={12} /> Dismiss
+                    </button>
+                  </span>
+                </>
+              )}
+            </span>
+          </span>
+        </div>
+        <TitleTag
+          {...(ad.destination_url
+            ? { href: ad.destination_url, target: "_blank", rel: "noopener noreferrer" }
+            : {})}
+          className={`mt-1 block truncate text-sm font-semibold leading-6 text-zinc-50 ${
+            ad.destination_url ? "transition-colors hover:text-white hover:underline hover:underline-offset-4 hover:decoration-zinc-600" : ""
+          }`}
+        >
+          {ad.title}
+        </TitleTag>
+        {ad.description && (
+          <p className="mt-0.5 line-clamp-2 text-[13px] leading-5 text-zinc-400">
+            {ad.description}
+          </p>
+        )}
+      </div>
+    </article>
+  );
 }
 
 interface UploadedImage {
@@ -65,6 +190,9 @@ export function ChatView({
   const [error, setError] = useState<string | null>(null);
   const [booted, setBooted] = useState(!pendingKey);
   const [bgOk, setBgOk] = useState(false);
+  const [flags, setFlags] = useState<Record<string, boolean>>({});
+  const [ad, setAd] = useState<ActiveAd | null>(null);
+  const [adDismissed, setAdDismissed] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
 
@@ -77,6 +205,23 @@ export function ChatView({
     const probe = new Image();
     probe.onload = () => setBgOk(true);
     probe.src = "/chat-bg.png";
+  }, []);
+
+  // Public feature flags + active ad (DB-backed, never hardcoded).
+  useEffect(() => {
+    fetch("/api/public/flags")
+      .then((r) => r.json())
+      .then((j) => {
+        const f = (j.flags ?? {}) as Record<string, boolean>;
+        setFlags(f);
+        if (f.ads !== false) {
+          fetch("/api/ads/active")
+            .then((r) => r.json())
+            .then((a) => setAd(a.ad ?? null))
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -346,6 +491,9 @@ export function ChatView({
                         <Markdown content={m.content} />
                         <div className="mt-2 flex items-center gap-1">
                           <CopyButton text={m.content} />
+                          {flags.feedback !== false && user && (
+                            <VoteButtons chatId={chatId} modelId={modelId} excerpt={m.content} />
+                          )}
                         </div>
                       </div>
                     </div>
@@ -380,13 +528,16 @@ export function ChatView({
               {error}
             </div>
           )}
+          {ad && !adDismissed && messages.length > 0 && (
+            <AdCard ad={ad} onDismiss={() => setAdDismissed(true)} />
+          )}
           <div ref={bottomRef} />
         </div>
       </div>
 
       <div className="relative z-10">
         <div className="mx-auto w-full max-w-3xl px-4 pb-5 pt-2 sm:px-6">
-          <ChatInput onSend={send} sending={sending} />
+          <ChatInput onSend={send} sending={sending} allowUpload={flags.image_generation !== false} />
         </div>
       </div>
     </div>
