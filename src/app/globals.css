@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink-950 text-zinc-100 antialiased;
+}
+
+::selection {
+  background: rgba(229, 72, 77, 0.35);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a42 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #3a3a42;
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-ink-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50;
+  }
+  .btn-send {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-zinc-900 transition-all hover:bg-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500;
+  }
+  .card {
+    @apply rounded-2xl border border-ink-700 bg-ink-900;
+  }
+  .input {
+    @apply w-full rounded-xl border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/40;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium uppercase tracking-wider text-zinc-400;
+  }
+  .nav-link {
+    @apply flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-ink-800 hover:text-white;
+  }
+  .nav-link-active {
+    @apply bg-ink-800 font-medium text-white;
+  }
+  .nav-link-active svg {
+    @apply text-accent;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-900 px-3.5 py-1.5 text-[13px] text-zinc-300 transition-colors hover:border-ink-600 hover:text-white;
+  }
+}
+
+.prose-humanai {
+  @apply text-[15px] leading-7 text-zinc-200;
+}
+.prose-humanai p {
+  @apply my-3;
+}
+.prose-humanai h1,
+.prose-humanai h2,
+.prose-humanai h3,
+.prose-humanai h4 {
+  @apply mt-5 mb-2 font-semibold text-white;
+}
+.prose-humanai ul,
+.prose-humanai ol {
+  @apply my-3 space-y-1 pl-5;
+}
+.prose-humanai ul {
+  @apply list-disc;
+}
+.prose-humanai ol {
+  @apply list-decimal;
+}
+.prose-humanai a {
+  @apply text-accent underline underline-offset-2;
+}
+.prose-humanai blockquote {
+  @apply my-3 border-l-2 border-accent/60 pl-4 text-zinc-400;
+}
+.prose-humanai code:not(pre code) {
+  @apply rounded-md bg-ink-700 px-1.5 py-0.5 font-mono text-[13px] text-zinc-100;
+}
+.prose-humanai pre {
+  @apply my-4 overflow-x-auto rounded-xl bg-black p-4 font-mono text-[13px] leading-6 text-zinc-100 ring-1 ring-ink-700;
+}
+.prose-humanai table {
+  @apply my-4 w-full border-collapse text-sm;
+}
+.prose-humanai th,
+.prose-humanai td {
+  @apply border border-ink-700 px-3 py-2 text-left;
+}
+.prose-humanai th {
+  @apply bg-ink-800 font-medium;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.typing-dot {
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-menu-in {
+  animation: menu-in 0.16s ease-out;
+  transform-origin: bottom left;
+}
