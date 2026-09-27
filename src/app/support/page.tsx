@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { SupportCenter } from "@/components\SupportCenter";
+import { SupportCenter } from "@/components/SupportCenter";
 import { createServerSupabase } from "@/lib/supabase/server";
 
 export default async function SupportPage() {

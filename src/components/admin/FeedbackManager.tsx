@@ -20,7 +20,7 @@ export function FeedbackManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
-  async function setStatus(id: string, s: string) {
+  async function changeStatus(id: string, s: string) {
     const res = await fetch("/api/admin/feedback", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -57,10 +57,10 @@ export function FeedbackManager() {
             <StatusPill value={r.status} tone={r.status === "open" ? "red" : r.status === "reviewing" ? "amber" : "green"} />
             <div className="flex gap-1.5">
               {r.status !== "reviewing" && (
-                <button onClick={() => setStatus(r.id, "reviewing")} className="btn-ghost !px-2.5 !py-1 text-xs border border-ink-700">Reviewing</button>
+                <button onClick={() => changeStatus(r.id, "reviewing")} className="btn-ghost !px-2.5 !py-1 text-xs border border-ink-700">Reviewing</button>
               )}
               {r.status !== "resolved" && (
-                <button onClick={() => setStatus(r.id, "resolved")} className="btn-ghost !px-2.5 !py-1 text-xs border border-ink-700">Resolve</button>
+                <button onClick={() => changeStatus(r.id, "resolved")} className="btn-ghost !px-2.5 !py-1 text-xs border border-ink-700">Resolve</button>
               )}
             </div>
           </div>
