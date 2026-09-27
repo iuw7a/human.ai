@@ -450,7 +450,7 @@ export function ChatView({
         <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
           {empty ? (
             <div className="flex min-h-[50vh] flex-col items-center justify-center text-center">
-              <h1 className="text-5xl font-bold tracking-[0.18em] text-white sm:text-6xl">
+              <h1 className="text-5xl font-black tracking-[0.24em] text-white sm:text-6xl">
                 HUMAN AI
               </h1>
               <p className="mt-3 text-[15px] text-zinc-400">

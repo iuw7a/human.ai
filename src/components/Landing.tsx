@@ -63,7 +63,7 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
       </div>
       <div className="relative z-10 flex flex-1 items-center justify-center px-4">
         <div className="w-full max-w-2xl">
-          <h1 className="mb-8 text-center text-5xl font-bold tracking-[0.18em] text-white sm:text-6xl">
+          <h1 className="mb-8 text-center text-5xl font-black tracking-[0.24em] text-white sm:text-7xl">
             HUMAN AI
           </h1>
           <ChatInput onSend={handleSend} sending={sending} />
