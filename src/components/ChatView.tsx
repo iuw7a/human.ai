@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, ThumbsUp, ThumbsDown, Globe, MoreHorizontal, X } from "lucide-react";
+import { Check, Copy, ThumbsUp, ThumbsDown, Globe, MoreHorizontal, Plug, Wrench, X } from "lucide-react";
 import { ChatInput, type PendingImage } from "./ChatInput";
 import { Markdown } from "./Markdown";
 import { AvatarMark } from "./Logo";
@@ -193,6 +193,8 @@ export function ChatView({
   const [flags, setFlags] = useState<Record<string, boolean>>({});
   const [ad, setAd] = useState<ActiveAd | null>(null);
   const [adDismissed, setAdDismissed] = useState(false);
+  const [mcpServers, setMcpServers] = useState<{ id: string; name: string }[]>([]);
+  const [mcpUsed, setMcpUsed] = useState<{ server: string; tool: string }[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
 
@@ -208,6 +210,7 @@ export function ChatView({
   }, []);
 
   // Public feature flags + active ad (DB-backed, never hardcoded).
+  // Plus the user's connected MCP servers (for the status chips).
   useEffect(() => {
     fetch("/api/public/flags")
       .then((r) => r.json())
@@ -222,7 +225,19 @@ export function ChatView({
         }
       })
       .catch(() => {});
-  }, []);
+    if (user) {
+      fetch("/api/mcp/connections")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => {
+          const list = (j?.connections ?? []) as { server_id: string; server?: { name?: string } }[];
+          setMcpServers(
+            list.map((c) => ({ id: c.server_id, name: c.server?.name ?? c.server_id }))
+          );
+        })
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -312,6 +327,7 @@ export function ChatView({
     setSending(true);
     setStreamed("");
     setError(null);
+    setMcpUsed([]);
 
     try {
       const uploaded = await uploadImages(pendingImages);
@@ -363,8 +379,13 @@ export function ChatView({
           const data = t.slice(5).trim();
           if (data === "[DONE]") continue;
           try {
-            const json = JSON.parse(data) as { token?: string; error?: string };
+            const json = JSON.parse(data) as {
+              token?: string;
+              error?: string;
+              mcp_used?: { server: string; tool: string }[];
+            };
             if (json.error) throw new Error(json.error);
+            if (json.mcp_used) setMcpUsed((prev) => [...prev, ...json.mcp_used!]);
             if (json.token) {
               full += json.token;
               setStreamed(full);
@@ -450,6 +471,12 @@ export function ChatView({
         <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
           {empty ? (
             <div className="flex min-h-[50vh] flex-col items-center justify-center text-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.webp"
+                alt="Human AI"
+                className="mb-6 h-20 w-20 rounded-3xl object-cover shadow-[0_8px_30px_rgba(0,0,0,0.5)]"
+              />
               <h1 className="text-5xl font-black tracking-[0.24em] text-white sm:text-6xl">
                 HUMAN AI
               </h1>
@@ -531,12 +558,42 @@ export function ChatView({
           {ad && !adDismissed && messages.length > 0 && (
             <AdCard ad={ad} onDismiss={() => setAdDismissed(true)} />
           )}
+          {mcpUsed.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <Wrench size={13} className="text-zinc-500" />
+              {mcpUsed.map((u, i) => (
+                <span
+                  key={i}
+                  className="rounded-full border border-ink-700 bg-ink-900 px-2.5 py-1 font-mono text-[11px] text-zinc-300"
+                >
+                  {u.server} · {u.tool}
+                </span>
+              ))}
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
       </div>
 
       <div className="relative z-10">
         <div className="mx-auto w-full max-w-3xl px-4 pb-5 pt-2 sm:px-6">
+          {mcpServers.length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center justify-center gap-1.5">
+              {mcpServers.map((s) => (
+                <a
+                  key={s.id}
+                  href={`/mcp/${s.id}`}
+                  title={`${s.name} connected — manage`}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20"
+                >
+                  <Plug size={11} /> {s.name}
+                </a>
+              ))}
+              <a href="/mcp" title="Browse MCP Marketplace" className="text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-200 hover:underline">
+                + Add
+              </a>
+            </div>
+          )}
           <ChatInput onSend={send} sending={sending} allowUpload={flags.image_generation !== false} />
         </div>
       </div>

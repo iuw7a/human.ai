@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
 import { getModel } from "@/lib/models";
 import { HUMAN_AI_SYSTEM_PROMPT } from "@/lib/systemPrompt";
-import { createNvidiaProvider } from "@/lib/providers/nvidia";
+import { createNvidiaProvider, streamChatWithTools, toOpenAIMessage, type OpenAIMessage, type ToolCallReq } from "@/lib/providers/nvidia";
 import { resolveDbModel, logAppError } from "@/lib/admin";
+import { connectedTools, executeTool } from "@/lib/mcp/catalog";
 import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
 import type { ChatMessageInput } from "@/lib/providers/types";
 
@@ -116,15 +117,103 @@ export async function POST(req: NextRequest) {
 
     const provider = createNvidiaProvider(resolved.providerModelId);
 
+    // MCP tools available to THIS user (their connections only).
+    const mcpByOpenName = new Map<string, { serverId: string; serverName: string; tool: string }>();
+    const mcpTools: { name: string; description: string; parameters: Record<string, unknown> }[] = [];
+    let mcpServerNames = "";
+    if (effectiveUserId) {
+      try {
+        const conn = await connectedTools(effectiveUserId);
+        mcpServerNames = conn.servers.map((s) => s.name).join(", ");
+        for (const t of conn.tools) {
+          const openName = `${t.serverId}__${t.name}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+          mcpByOpenName.set(openName, { serverId: t.serverId, serverName: t.serverName, tool: t.name });
+          mcpTools.push({
+            name: openName,
+            description: t.description ?? "",
+            parameters:
+              t.inputSchema && typeof t.inputSchema === "object"
+                ? (t.inputSchema as Record<string, unknown>)
+                : { type: "object", properties: {} },
+          });
+        }
+      } catch {
+        // MCP is optional — never break chat
+      }
+    }
+    if (mcpTools.length > 0) {
+      systemContent += `\n\nCONNECTED MCP SERVERS for this user: ${mcpServerNames}. You have function tools from these servers — call them when they can help answer (data lookups, prices, records, docs). Prefer calling a function over guessing. Only use tools from this list.`;
+    }
+
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         const send = (data: string) =>
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
         try {
-          await provider.stream(withIdentity, {
-            onToken: (token) => send(JSON.stringify({ token })),
-          });
+          if (mcpTools.length === 0) {
+            await provider.stream(withIdentity, {
+              onToken: (token) => send(JSON.stringify({ token })),
+            });
+            send("[DONE]");
+            return;
+          }
+
+          // Agentic loop: stream text, execute requested MCP tools, repeat.
+          const history: OpenAIMessage[] = withIdentity.map(toOpenAIMessage);
+          for (let round = 0; round < 4; round++) {
+            const { toolCalls }: { toolCalls: ToolCallReq[] } = await streamChatWithTools(
+              resolved.providerModelId,
+              history,
+              mcpTools,
+              { onToken: (token) => send(JSON.stringify({ token })) }
+            );
+            if (toolCalls.length === 0) break;
+            const used: { server: string; tool: string }[] = [];
+            const settled = await Promise.all(
+              toolCalls.slice(0, 4).map(async (tc) => {
+                const def = mcpByOpenName.get(tc.name);
+                let args: Record<string, unknown> = {};
+                try {
+                  args = JSON.parse(tc.arguments || "{}");
+                } catch {
+                  args = {};
+                }
+                if (!def || !effectiveUserId) {
+                  return { tc, result: "Unknown tool — do not call it again." };
+                }
+                try {
+                  const out = await executeTool(
+                    effectiveUserId,
+                    def.serverId,
+                    def.tool,
+                    args as Record<string, unknown>
+                  );
+                  used.push({ server: out.serverName, tool: def.tool });
+                  return { tc, result: out.result };
+                } catch (e) {
+                  return { tc, result: e instanceof Error ? e.message : "Tool failed." };
+                }
+              })
+            );
+            send(JSON.stringify({ mcp_used: used }));
+            history.push({
+              role: "assistant",
+              content: null,
+              tool_calls: toolCalls.slice(0, 4).map((tc) => ({
+                id: tc.id,
+                type: "function" as const,
+                function: { name: tc.name, arguments: tc.arguments },
+              })),
+            });
+            for (const r of settled) {
+              history.push({
+                role: "tool",
+                tool_call_id: r.tc.id,
+                content: r.result.slice(0, 6000),
+              });
+            }
+          }
           send("[DONE]");
         } catch (e) {
           const raw = e instanceof Error ? e.message : "Generation failed.";

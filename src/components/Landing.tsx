@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Plug } from "lucide-react";
 import { ChatInput, type PendingImage } from "@/components/ChatInput";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -63,20 +64,24 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
       </div>
       <div className="relative z-10 flex flex-1 items-center justify-center px-4">
         <div className="w-full max-w-2xl">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.webp"
+            alt="Human AI"
+            className="mx-auto mb-6 h-20 w-20 rounded-3xl object-cover shadow-[0_8px_30px_rgba(0,0,0,0.5)]"
+          />
           <h1 className="mb-8 text-center text-5xl font-black tracking-[0.24em] text-white sm:text-7xl">
             HUMAN AI
           </h1>
           <ChatInput onSend={handleSend} sending={sending} />
-          <div className="mt-5 flex flex-wrap justify-center gap-2">
-            {[
-              "Explain this concept simply",
-              "Help me debug my code",
-              "What is in this image?",
-            ].map((s) => (
-              <button key={s} onClick={() => handleSend(s, [])} className="chip">
-                {s}
-              </button>
-            ))}
+          <div className="mt-5 flex justify-center">
+            <button
+              onClick={() => router.push("/mcp")}
+              className="inline-flex items-center gap-2 rounded-full border border-accent/50 bg-accent/10 px-5 py-2.5 text-sm font-medium text-red-100 shadow-[0_0_24px_rgba(229,72,77,0.25)] transition-all hover:bg-accent/20 hover:shadow-[0_0_32px_rgba(229,72,77,0.4)]"
+            >
+              <Plug size={15} />
+              Connect Human AI to MCP Servers
+            </button>
           </div>
         </div>
       </div>

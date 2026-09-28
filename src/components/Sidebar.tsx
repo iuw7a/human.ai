@@ -8,6 +8,8 @@ import {
   MessagesSquare,
   Puzzle,
   LibraryBig,
+  Plug,
+  Crown,
   User,
   Settings,
   Brain,
@@ -38,6 +40,8 @@ interface ChatItem {
 const NAV = [
   { href: "/plugins", label: "Plugins", icon: Puzzle },
   { href: "/library", label: "Library", icon: LibraryBig },
+  { href: "/mcp", label: "MCP Servers", icon: Plug },
+  { href: "/chess", label: "Chess", icon: Crown },
 ];
 
 const USER_MENU = [
