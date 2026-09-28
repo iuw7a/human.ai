@@ -4,6 +4,7 @@ import { resolveDbModel, logAppError } from "@/lib/admin";
 import {
   getDesktopSession,
   destroyDesktopSession,
+  desktopTaskSteps,
   DESKTOP_MAX_STEPS,
 } from "@/lib/desktop/session";
 import {
@@ -165,12 +166,12 @@ export async function POST(req: NextRequest) {
     if (s.pendingApproval) {
       return Response.json({ needsApproval: s.pendingApproval, message: "Human approval required", status: s.status });
     }
-    if (s.history.length >= DESKTOP_MAX_STEPS) {
+    if (desktopTaskSteps(s) >= DESKTOP_MAX_STEPS) {
       s.status = "done";
       await logAgentRun(user.id, s.id, `[desktop] ${s.goal}`, "done", s.history);
       return Response.json({ done: true, message: "Stopped: step limit reached.", status: s.status });
     }
-    const recent = s.history.slice(-3);
+    const recent = s.history.slice(s.taskStart ?? 0).slice(-3);
     if (recent.length === 3 && recent.every((h) => !h.ok)) {
       s.status = "done";
       const message = "Stopped after 3 consecutive failures. Last error: " + recent[2].observation;

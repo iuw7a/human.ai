@@ -21,14 +21,17 @@ export function modeRoute(mode: ChatMode): string {
 /**
  * Polished native mode selector for the chat bar.
  * Renders as [ Chat ▾ ] with a dropdown of Chat / Agent / Computer Use.
- * Switching navigates to each mode's own route (optionally carrying the draft as ?goal=).
+ * With onSelect, switching only changes the execution mode (same conversation).
+ * Without onSelect (standalone entry points), it navigates to each mode's route.
  */
 export function ModeSelector({
   value,
   getDraft,
+  onSelect,
 }: {
   value: ChatMode;
   getDraft?: () => string;
+  onSelect?: (mode: ChatMode) => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -54,6 +57,10 @@ export function ModeSelector({
   function select(mode: ChatMode) {
     setOpen(false);
     if (mode === value) return;
+    if (onSelect) {
+      onSelect(mode);
+      return;
+    }
     const draft = (getDraft?.() ?? "").trim();
     if (mode === "chat") {
       router.push("/");

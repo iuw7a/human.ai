@@ -20,6 +20,10 @@ export interface DesktopSession {
   id: string;
   userId: string;
   goal: string;
+  /** Owning chat conversation (one conversation, many tasks). Null for standalone sessions. */
+  chatId: string | null;
+  /** History length at the start of the current task (step limits are per-task). */
+  taskStart: number;
   status: "active" | "done" | "closed";
   history: DesktopStep[];
   pendingApproval: DesktopApproval | null;
@@ -59,12 +63,15 @@ function newId(): string {
 export async function createDesktopSession(
   userId: string,
   goal: string,
-  port: number
+  port: number,
+  chatId?: string
 ): Promise<DesktopSession> {
   const s: DesktopSession = {
     id: newId(),
     userId,
     goal: goal.slice(0, 2000),
+    chatId: chatId ?? null,
+    taskStart: 0,
     status: "active",
     history: [],
     pendingApproval: null,
@@ -91,6 +98,40 @@ export async function createDesktopSession(
 export function getDesktopSession(id: string, userId: string): DesktopSession | null {
   const s = store().get(id);
   if (!s || s.userId !== userId || s.status === "closed") return null;
+  s.lastActive = Date.now();
+  return s;
+}
+
+/** Live session bound to a chat conversation (for follow-up tasks in the same chat). */
+export function getDesktopSessionByChat(chatId: string, userId: string): DesktopSession | null {
+  for (const s of store().values()) {
+    if (s.chatId === chatId && s.userId === userId && s.status !== "closed") {
+      s.lastActive = Date.now();
+      return s;
+    }
+  }
+  return null;
+}
+
+/** Steps taken in the current task (limits are per-task, not per-session). */
+export function desktopTaskSteps(s: DesktopSession): number {
+  return s.history.length - (s.taskStart ?? 0);
+}
+
+/**
+ * Point a chat-bound session at a new follow-up task.
+ * Desktop state/history persist; step budget restarts; stale approvals clear.
+ */
+export function retargetDesktopSession(id: string, userId: string, goal: string): DesktopSession | null {
+  const s = store().get(id);
+  if (!s || s.userId !== userId || s.status === "closed") return null;
+  s.goal = goal.slice(0, 2000);
+  s.status = "active";
+  s.stopFlag = false;
+  s.pendingApproval = null;
+  s.consecutiveErrors = 0;
+  if (s.history.length > 8) s.history = s.history.slice(-8);
+  s.taskStart = s.history.length;
   s.lastActive = Date.now();
   return s;
 }

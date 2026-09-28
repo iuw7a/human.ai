@@ -7,6 +7,7 @@ import {
   pageState,
   screenshot,
   executeBrowserTool,
+  taskSteps,
   MAX_STEPS,
 } from "@/lib/agent/browser";
 import { AGENT_SYSTEM_PROMPT, AGENT_TOOLS } from "@/lib/agent/tools";
@@ -68,12 +69,12 @@ export async function POST(req: NextRequest) {
         status: s.status,
       });
     }
-    if (s.history.length >= MAX_STEPS) {
+    if (taskSteps(s) >= MAX_STEPS) {
       s.status = "done";
       await logAgentRun(user.id, s.id, s.goal, "done", s.history);
       return Response.json({ done: true, message: "Stopped: step limit reached.", status: s.status });
     }
-    const recent = s.history.slice(-3);
+    const recent = s.history.slice(s.taskStart ?? 0).slice(-3);
     if (recent.length === 3 && recent.every((h) => !h.ok)) {
       s.status = "done";
       const message =

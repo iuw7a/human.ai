@@ -21,6 +21,10 @@ export interface AgentSession {
   id: string;
   userId: string;
   goal: string;
+  /** Owning chat conversation (one conversation, many tasks). Null for standalone sessions. */
+  chatId: string | null;
+  /** History length at the start of the current task (step limits are per-task). */
+  taskStart: number;
   browser: Browser;
   context: BrowserContext;
   status: "active" | "done" | "closed";
@@ -83,7 +87,7 @@ function browserUsers(delta: number): number {
 }
 
 /** Create an isolated session (own incognito context) for a user. */
-export async function createSession(userId: string, goal: string): Promise<AgentSession> {
+export async function createSession(userId: string, goal: string, chatId?: string): Promise<AgentSession> {
   const browser = await getBrowser();
   const context = await browser.newContext({
     viewport: { width: 1280, height: 800 },
@@ -97,6 +101,8 @@ export async function createSession(userId: string, goal: string): Promise<Agent
     id: newId(),
     userId,
     goal: goal.slice(0, 2000),
+    chatId: chatId ?? null,
+    taskStart: 0,
     browser,
     context,
     status: "active",
@@ -115,6 +121,39 @@ export async function createSession(userId: string, goal: string): Promise<Agent
 export function getSession(id: string, userId: string): AgentSession | null {
   const s = sessions().get(id);
   if (!s || s.userId !== userId || s.status === "closed") return null;
+  s.lastActive = Date.now();
+  return s;
+}
+
+/** Live session bound to a chat conversation (for follow-up tasks in the same chat). */
+export function getSessionByChat(chatId: string, userId: string): AgentSession | null {
+  for (const s of sessions().values()) {
+    if (s.chatId === chatId && s.userId === userId && s.status !== "closed") {
+      s.lastActive = Date.now();
+      return s;
+    }
+  }
+  return null;
+}
+
+/** Steps taken in the current task (limits are per-task, not per-session). */
+export function taskSteps(s: AgentSession): number {
+  return s.history.length - (s.taskStart ?? 0);
+}
+
+/**
+ * Point a chat-bound session at a new follow-up task.
+ * Browser/tabs/history persist; step budget restarts; stale approvals clear.
+ */
+export function retargetSession(id: string, userId: string, goal: string): AgentSession | null {
+  const s = sessions().get(id);
+  if (!s || s.userId !== userId || s.status === "closed") return null;
+  s.goal = goal.slice(0, 2000);
+  s.status = "active";
+  s.pendingApproval = null;
+  s.consecutiveErrors = 0;
+  if (s.history.length > 8) s.history = s.history.slice(-8);
+  s.taskStart = s.history.length;
   s.lastActive = Date.now();
   return s;
 }

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { createSession, getSession, closeSession, pageState, screenshot } from "@/lib/agent/browser";
+import { createSession, getSession, getSessionByChat, retargetSession, closeSession, pageState, screenshot } from "@/lib/agent/browser";
 import { logAgentRun } from "@/lib/agent/runlog";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ async function stateOf(s: NonNullable<ReturnType<typeof getSession>>) {
   };
 }
 
-/** POST /api/agent/session {goal} — start an isolated agent session. */
+/** POST /api/agent/session {goal, chatId?} — start or resume a chat-bound agent session. */
 export async function POST(req: NextRequest) {
   const supabase = createServerSupabase();
   const {
@@ -30,11 +30,22 @@ export async function POST(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Not authenticated." }, { status: 401 });
   try {
-    const { goal } = (await req.json()) as { goal?: string };
+    const { goal, chatId } = (await req.json()) as { goal?: string; chatId?: string };
     if (!goal || !goal.trim()) {
       return Response.json({ error: "A goal is required." }, { status: 400 });
     }
-    const s = await createSession(user.id, goal.trim());
+    // One conversation, many tasks: resume the chat's live session when present.
+    if (chatId) {
+      const existing = getSessionByChat(chatId, user.id);
+      if (existing) {
+        const resumed = retargetSession(existing.id, user.id, goal.trim());
+        if (resumed) {
+          await logAgentRun(user.id, resumed.id, resumed.goal, "active", resumed.history);
+          return Response.json({ ...(await stateOf(resumed)), resumed: true });
+        }
+      }
+    }
+    const s = await createSession(user.id, goal.trim(), chatId);
     await logAgentRun(user.id, s.id, s.goal, "active", []);
     return Response.json(await stateOf(s));
   } catch (e) {
@@ -45,7 +56,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** GET /api/agent/session?id= — current state (ownership enforced). */
+/** GET /api/agent/session?id= (or ?chatId=) — current state (ownership enforced). */
 export async function GET(req: NextRequest) {
   const supabase = createServerSupabase();
   const {
@@ -53,7 +64,8 @@ export async function GET(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Not authenticated." }, { status: 401 });
   const id = req.nextUrl.searchParams.get("id") ?? "";
-  const s = getSession(id, user.id);
+  const chatId = req.nextUrl.searchParams.get("chatId") ?? "";
+  const s = id ? getSession(id, user.id) : chatId ? getSessionByChat(chatId, user.id) : null;
   if (!s) return Response.json({ error: "Session not found." }, { status: 404 });
   try {
     return Response.json(await stateOf(s));

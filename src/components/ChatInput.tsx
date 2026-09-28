@@ -20,6 +20,8 @@ export function ChatInput({
   allowUpload = true,
   mode = "chat",
   showModeSelector = true,
+  onModeChange,
+  initialText = "",
 }: {
   onSend: (text: string, images: PendingImage[]) => void;
   sending: boolean;
@@ -27,8 +29,10 @@ export function ChatInput({
   allowUpload?: boolean;
   mode?: ChatMode;
   showModeSelector?: boolean;
+  onModeChange?: (mode: ChatMode) => void;
+  initialText?: string;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [images, setImages] = useState<PendingImage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -147,7 +151,7 @@ export function ChatInput({
               <ImagePlus size={18} />
             </button>
             {showModeSelector && (
-              <ModeSelector value={mode} getDraft={() => text} />
+              <ModeSelector value={mode} getDraft={() => text} onSelect={onModeChange} />
             )}
           </div>
           <button

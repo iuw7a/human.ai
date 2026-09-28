@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, ThumbsUp, ThumbsDown, Globe, MoreHorizontal, Plug, Wrench, X } from "lucide-react";
+import { Check, Copy, ThumbsUp, ThumbsDown, Globe, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown } from "lucide-react";
 import { ChatInput, type PendingImage } from "./ChatInput";
 import { Markdown } from "./Markdown";
 import { AvatarMark } from "./Logo";
 import { createClient } from "@/lib/supabase/client";
 import { getModel } from "@/lib/models";
+import type { ChatMode } from "./ModeSelector";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 export interface StoredMessage {
@@ -170,6 +171,145 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+interface ActivityStep {
+  n: number;
+  status: string;
+  message?: string;
+}
+
+interface ModeActivity {
+  kind: "agent" | "computer";
+  status: string;
+  steps: ActivityStep[];
+  shot: string | null;
+  approval: { action: string; reason: string } | null;
+  doneText: string | null;
+  stopped: boolean;
+}
+
+function validMode(m: unknown): m is ChatMode {
+  return m === "chat" || m === "agent" || m === "computer-use";
+}
+
+/** Inline progress for Agent / Computer Use runs — same chat UI, no separate interface. */
+function ModeActivityCard({
+  activity,
+  onApprove,
+  onReject,
+  onStop,
+  onRelease,
+  onDismiss,
+}: {
+  activity: ModeActivity;
+  onApprove: () => void;
+  onReject: () => void;
+  onStop: () => void;
+  onRelease: () => void;
+  onDismiss: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const running = !activity.doneText;
+  const Icon = activity.kind === "computer" ? Monitor : Bot;
+  const label = activity.kind === "computer" ? "Computer Use" : "Agent";
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-ink-700 bg-ink-900/80">
+      <div className="flex items-center gap-2.5 px-4 py-3">
+        {running ? (
+          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" />
+        ) : (
+          <span className={`h-2 w-2 shrink-0 rounded-full ${activity.stopped ? "bg-zinc-500" : "bg-emerald-400"}`} />
+        )}
+        <Icon size={15} className="shrink-0 text-accent" />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-zinc-100">
+          {label} · {running ? activity.status : activity.doneText}
+        </span>
+        {activity.steps.length > 0 && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-ink-800 hover:text-white"
+          >
+            {activity.steps.length} steps
+            <ChevronDown size={13} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
+          </button>
+        )}
+        {running ? (
+          <button
+            onClick={onStop}
+            title={activity.kind === "computer" ? "Immediately release mouse and keyboard" : "Stop the agent"}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-accent-hover"
+          >
+            <Square size={11} /> Stop
+          </button>
+        ) : (
+          <button
+            onClick={onDismiss}
+            className="shrink-0 rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-ink-800 hover:text-white"
+            aria-label="Dismiss"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {activity.approval && (
+        <div className="mx-4 mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 animate-menu-in">
+          <p className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-amber-200">
+            <AlertTriangle size={14} /> Human approval required
+          </p>
+          <p className="mt-1 text-[13px] text-zinc-200">{activity.approval.action}</p>
+          {activity.approval.reason && (
+            <p className="mt-0.5 text-xs text-zinc-400">{activity.approval.reason}</p>
+          )}
+          <div className="mt-2.5 flex gap-2">
+            <button onClick={onApprove} className="btn-primary flex-1 !py-1.5 text-[13px]">
+              <Check size={14} /> Approve
+            </button>
+            <button onClick={onReject} className="btn-ghost flex-1 border border-ink-600 !py-1.5 text-[13px]">
+              <X size={14} /> Reject
+            </button>
+          </div>
+        </div>
+      )}
+
+      {expanded && activity.steps.length > 0 && (
+        <div className="mx-4 mb-3 max-h-48 space-y-1.5 overflow-y-auto">
+          {activity.steps.map((s, i) => (
+            <div key={i} className="rounded-lg bg-black/40 px-3 py-1.5">
+              <p className="text-xs font-medium text-zinc-200">
+                <span className="mr-2 font-mono text-[10px] text-zinc-500">#{s.n}</span>
+                {s.status}
+              </p>
+              {s.message && <p className="mt-0.5 text-xs leading-5 text-zinc-500">{s.message}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activity.shot && (
+        <div className="px-4 pb-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`data:image/jpeg;base64,${activity.shot}`}
+            alt="Current view"
+            className="max-h-56 w-full rounded-xl border border-ink-700 object-cover object-top"
+          />
+        </div>
+      )}
+
+      {!running && activity.kind === "computer" && !activity.stopped && (
+        <div className="border-t border-ink-800 px-4 py-2.5">
+          <button
+            onClick={onRelease}
+            className="text-xs text-zinc-500 underline-offset-2 transition-colors hover:text-zinc-200 hover:underline"
+          >
+            Release the computer (close session)
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChatView({
   chatId,
   modelId,
@@ -195,8 +335,20 @@ export function ChatView({
   const [adDismissed, setAdDismissed] = useState(false);
   const [mcpServers, setMcpServers] = useState<{ id: string; name: string }[]>([]);
   const [mcpUsed, setMcpUsed] = useState<{ server: string; tool: string }[]>([]);
+  // ONE conversation, three execution modes. Mode only changes HOW a message is handled.
+  const [mode, setMode] = useState<ChatMode>("chat");
+  const modeRef = useRef<ChatMode>("chat");
+  const [activity, setActivity] = useState<ModeActivity | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
+  const stopRef = useRef(false);
+  const approvalResolveRef = useRef<((approved: boolean) => void) | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+
+  function changeMode(m: ChatMode) {
+    modeRef.current = m;
+    setMode(m);
+  }
 
   const model = getModel(modelId);
   const title =
@@ -241,7 +393,7 @@ export function ChatView({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamed]);
+  }, [messages, streamed, activity]);
 
   async function persist(
     role: "user" | "assistant",
@@ -317,12 +469,35 @@ export function ChatView({
     return images.map((i) => ({ url: i.dataUrl, mimeType: i.mimeType }));
   }
 
-  async function send(text: string, pendingImages: PendingImage[]) {
+  /** Shared first half of every send: upload, append + persist the user message. */
+  async function prepareUserMessage(
+    text: string,
+    pendingImages: PendingImage[]
+  ): Promise<{ history: StoredMessage[]; uploaded: UploadedImage[] }> {
+    const uploaded = await uploadImages(pendingImages);
+    const userMsg: StoredMessage = {
+      role: "user",
+      content: text,
+      images: uploaded,
+    };
+    const history = [...messages, userMsg];
+    setMessages(history);
+    await persist(
+      "user",
+      text,
+      uploaded.map((u) => ({ url: u.storagePath ?? "", storagePath: u.storagePath }))
+    );
+    router.refresh();
+    return { history, uploaded };
+  }
+
+  async function send(text: string, pendingImages: PendingImage[], modeOverride?: ChatMode) {
     if (sendingRef.current) return;
     if (!model) {
       setError(`Unknown model "${modelId}".`);
       return;
     }
+    const m = modeOverride ?? modeRef.current;
     sendingRef.current = true;
     setSending(true);
     setStreamed("");
@@ -330,83 +505,317 @@ export function ChatView({
     setMcpUsed([]);
 
     try {
-      const uploaded = await uploadImages(pendingImages);
-      const userMsg: StoredMessage = {
-        role: "user",
-        content: text,
-        images: uploaded,
-      };
-      const history = [...messages, userMsg];
-      setMessages(history);
-      await persist(
-        "user",
-        text,
-        uploaded.map((u) => ({ url: u.storagePath ?? "", storagePath: u.storagePath }))
-      );
-      router.refresh();
-
-      const apiMessages = history.map((m) => ({
-        role: m.role,
-        content: m.content,
-        images: (m.images ?? [])
-          .filter((i) => i.url.startsWith("data:") || i.url.startsWith("http"))
-          .map((i) => ({ url: i.url })),
-      }));
-
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelId, messages: apiMessages }),
-      });
-      if (!res.ok || !res.body) {
-        const errJson = await res.json().catch(() => null);
-        throw new Error(errJson?.error ?? `Request failed (${res.status}).`);
+      const { history, uploaded } = await prepareUserMessage(text, pendingImages);
+      if (m === "agent") {
+        await runAgentTask(history, text, uploaded.length);
+      } else if (m === "computer-use") {
+        await runComputerTask(history, text, uploaded.length);
+      } else {
+        await runChatReply(history);
       }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let full = "";
-      let buffer = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          const t = line.trim();
-          if (!t.startsWith("data:")) continue;
-          const data = t.slice(5).trim();
-          if (data === "[DONE]") continue;
-          try {
-            const json = JSON.parse(data) as {
-              token?: string;
-              error?: string;
-              mcp_used?: { server: string; tool: string }[];
-            };
-            if (json.error) throw new Error(json.error);
-            if (json.mcp_used) setMcpUsed((prev) => [...prev, ...json.mcp_used!]);
-            if (json.token) {
-              full += json.token;
-              setStreamed(full);
-            }
-          } catch (e) {
-            if (e instanceof Error && e.message !== "Unexpected end of JSON input") throw e;
-          }
-        }
-      }
-
-      setMessages([...history, { role: "assistant", content: full }]);
-      setStreamed("");
-      await persist("assistant", full);
-      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
       setStreamed("");
+      setActivity(null);
     } finally {
       sendingRef.current = false;
       setSending(false);
     }
+  }
+
+  /** Normal chat reply: existing streaming behavior, unchanged. */
+  async function runChatReply(history: StoredMessage[]) {
+    const apiMessages = history.map((m) => ({
+      role: m.role,
+      content: m.content,
+      images: (m.images ?? [])
+        .filter((i) => i.url.startsWith("data:") || i.url.startsWith("http"))
+        .map((i) => ({ url: i.url })),
+    }));
+
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modelId, messages: apiMessages }),
+    });
+    if (!res.ok || !res.body) {
+      const errJson = await res.json().catch(() => null);
+      throw new Error(errJson?.error ?? `Request failed (${res.status}).`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let full = "";
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith("data:")) continue;
+        const data = t.slice(5).trim();
+        if (data === "[DONE]") continue;
+        try {
+          const json = JSON.parse(data) as {
+            token?: string;
+            error?: string;
+            mcp_used?: { server: string; tool: string }[];
+          };
+          if (json.error) throw new Error(json.error);
+          if (json.mcp_used) setMcpUsed((prev) => [...prev, ...json.mcp_used!]);
+          if (json.token) {
+            full += json.token;
+            setStreamed(full);
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message !== "Unexpected end of JSON input") throw e;
+        }
+      }
+    }
+
+    await finishAssistantReply(history, full);
+  }
+
+  async function finishAssistantReply(history: StoredMessage[], full: string) {
+    setMessages([...history, { role: "assistant", content: full }]);
+    setStreamed("");
+    await persist("assistant", full);
+    router.refresh();
+  }
+
+  /** Conversation context so follow-up tasks reuse what was already discussed/done. */
+  function convoContext(history: StoredMessage[]): string {
+    return history
+      .slice(-6)
+      .map((m) => `${m.role === "assistant" ? "Human AI" : "User"}: ${m.content.slice(0, 600)}`)
+      .join("\n");
+  }
+
+  function waitForApproval(): Promise<boolean> {
+    return new Promise((resolve) => {
+      approvalResolveRef.current = resolve;
+    });
+  }
+
+  function decideApproval(approved: boolean) {
+    const r = approvalResolveRef.current;
+    approvalResolveRef.current = null;
+    setActivity((a) => (a ? { ...a, approval: null, status: approved ? "Approved — continuing…" : "Rejected — replanning…" } : a));
+    r?.(approved);
+  }
+
+  function stopRun() {
+    stopRef.current = true;
+    const r = approvalResolveRef.current;
+    approvalResolveRef.current = null;
+    r?.(false);
+  }
+
+  /**
+   * Generic in-chat task driver for Agent (isolated browser) and Computer Use (real desktop).
+   * The session is bound to this chatId, so follow-up messages continue the same
+   * browser/desktop state instead of starting over. The result lands in this chat.
+   */
+  async function driveModeTask(
+    kind: "agent" | "computer",
+    history: StoredMessage[],
+    text: string,
+    imageCount: number
+  ) {
+    const isComputer = kind === "computer";
+    const sessionUrl = isComputer ? "/api/agent-desktop/session" : "/api/agent/session";
+    const stepUrl = isComputer ? "/api/agent-desktop/step" : "/api/agent/step";
+    const approveUrl = isComputer ? "/api/agent-desktop/approve" : "/api/agent/approve";
+    stopRef.current = false;
+    sessionIdRef.current = null;
+    let stepNo = 0;
+
+    setActivity({
+      kind,
+      status: isComputer ? "Looking at screen…" : "Starting browser task…",
+      steps: [],
+      shot: null,
+      approval: null,
+      doneText: null,
+      stopped: false,
+    });
+
+    const goal =
+      `TASK: ${text}` +
+      (imageCount > 0 ? ` [${imageCount} image(s) attached in chat]` : "") +
+      `\n\nCONVERSATION SO FAR (same chat — use it for context, and continue any ongoing on-screen work):\n${convoContext(history)}`;
+
+    // Create or resume the chat-bound session (server retargets when one is live).
+    const createRes = await fetch(sessionUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        isComputer ? { goal, consent: true, chatId } : { goal, chatId }
+      ),
+    });
+    const created = await createRes.json().catch(() => null);
+    if (!createRes.ok) throw new Error(created?.error ?? `Could not start ${isComputer ? "Computer Use" : "Agent"} session.`);
+    const sessionId = created.sessionId as string;
+    sessionIdRef.current = sessionId;
+    if (created.screenshot) {
+      setActivity((a) => (a ? { ...a, shot: created.screenshot } : a));
+    }
+
+    for (let i = 0; i < 40; i++) {
+      if (stopRef.current) break;
+      const res = await fetch(stepUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? `Step failed (${res.status}).`);
+      if (j.screenshot) {
+        const shot = j.screenshot as string;
+        setActivity((a) => (a ? { ...a, shot } : a));
+      }
+      if (j.stopped) {
+        await finishModeTask(history, kind, j.message ?? "Stopped.", true);
+        return;
+      }
+      if (j.needsApproval) {
+        setActivity((a) =>
+          a
+            ? {
+                ...a,
+                approval: {
+                  action: String(j.needsApproval.action ?? "sensitive action"),
+                  reason: String(j.needsApproval.reason ?? ""),
+                },
+                status: "Human approval required",
+              }
+            : a
+        );
+        const approved = await waitForApproval();
+        if (stopRef.current) break;
+        const ar = await fetch(approveUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, approved }),
+        });
+        const aj = await ar.json().catch(() => null);
+        if (!ar.ok) throw new Error(aj?.error ?? "Approval failed.");
+        if (aj.screenshot) {
+          setActivity((a) => (a ? { ...a, shot: aj.screenshot } : a));
+        }
+        setActivity((a) =>
+          a
+            ? {
+                ...a,
+                steps: [...a.steps, { n: ++stepNo, status: approved ? "Approved" : "Rejected", message: aj.message }].slice(-30),
+                status: approved ? "Continuing…" : "Replanning…",
+              }
+            : a
+        );
+        continue;
+      }
+      if (j.done) {
+        await finishModeTask(history, kind, j.message ?? "Task completed.", false);
+        return;
+      }
+      const status = String(j.status ?? j.action ?? "Working…");
+      const observation = j.observation ? String(j.observation).slice(0, 300) : undefined;
+      setActivity((a) =>
+        a
+          ? {
+              ...a,
+              status,
+              steps: [...a.steps, { n: ++stepNo, status, message: observation }].slice(-30),
+            }
+          : a
+      );
+    }
+
+    if (stopRef.current) {
+      if (isComputer && sessionIdRef.current) {
+        // Emergency release: immediately free mouse/keyboard and remove the overlay.
+        await fetch(`/api/agent-desktop/session?id=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
+        sessionIdRef.current = null;
+      }
+      await finishModeTask(history, kind, "Stopped by user.", true);
+      return;
+    }
+    await finishModeTask(history, kind, "Stopped: step limit reached.", true);
+  }
+
+  async function finishModeTask(
+    history: StoredMessage[],
+    kind: "agent" | "computer",
+    message: string,
+    stopped: boolean
+  ) {
+    const label = kind === "computer" ? "Computer Use" : "Agent";
+    const full = message && message.trim() ? message : "Task completed.";
+    setActivity((a) =>
+      a ? { ...a, doneText: `${label}: ${full.slice(0, 300)}`, stopped, status: stopped ? "Stopped" : "Task completed", approval: null } : a
+    );
+    await finishAssistantReply(history, full);
+  }
+
+  /** Agent mode: always performs the task in the isolated browser, in this chat. */
+  async function runAgentTask(history: StoredMessage[], text: string, imageCount: number) {
+    await driveModeTask("agent", history, text, imageCount);
+  }
+
+  /**
+   * Computer Use mode: acts like an ongoing participant in this chat.
+   * Plain questions are answered normally; anything needing the screen
+   * immediately drives the persistent computer session bound to this chat.
+   */
+  async function runComputerTask(history: StoredMessage[], text: string, imageCount: number) {
+    setActivity({
+      kind: "computer",
+      status: "Thinking…",
+      steps: [],
+      shot: null,
+      approval: null,
+      doneText: null,
+      stopped: false,
+    });
+    let needsComputer = true;
+    try {
+      const cr = await fetch("/api/computer-use/classify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          history: history.slice(-6).map((m) => ({ role: m.role, content: m.content.slice(0, 500) })),
+        }),
+      });
+      const cj = await cr.json().catch(() => null);
+      if (cr.ok && cj && cj.needsComputer === false) needsComputer = false;
+    } catch {
+      needsComputer = true;
+    }
+    if (!needsComputer) {
+      setActivity(null);
+      await runChatReply(history);
+      return;
+    }
+    await driveModeTask("computer", history, text, imageCount);
+  }
+
+  /** Release the chat's computer session (frees mouse/keyboard, removes overlay). */
+  async function releaseComputer() {
+    try {
+      const res = await fetch(`/api/agent-desktop/session?chatId=${encodeURIComponent(chatId)}`);
+      const j = await res.json().catch(() => null);
+      if (res.ok && j?.sessionId) {
+        await fetch(`/api/agent-desktop/session?id=${j.sessionId}`, { method: "DELETE" }).catch(() => {});
+      }
+    } catch {
+      // best effort
+    }
+    sessionIdRef.current = null;
+    setActivity(null);
   }
 
   useEffect(() => {
@@ -419,9 +828,13 @@ export function ChatView({
         const pending = JSON.parse(raw) as {
           text: string;
           images: PendingImage[];
+          mode?: unknown;
         };
         if (pending.text || pending.images?.length) {
-          void send(pending.text ?? "", pending.images ?? []);
+          // Carry the entry-point mode into this same conversation (no new chat).
+          const m = validMode(pending.mode) ? pending.mode : "chat";
+          changeMode(m);
+          void send(pending.text ?? "", pending.images ?? [], m);
         }
       }
     } catch {
@@ -555,6 +968,16 @@ export function ChatView({
               {error}
             </div>
           )}
+          {activity && (
+            <ModeActivityCard
+              activity={activity}
+              onApprove={() => decideApproval(true)}
+              onReject={() => decideApproval(false)}
+              onStop={stopRun}
+              onRelease={releaseComputer}
+              onDismiss={() => setActivity(null)}
+            />
+          )}
           {ad && !adDismissed && messages.length > 0 && (
             <AdCard ad={ad} onDismiss={() => setAdDismissed(true)} />
           )}
@@ -594,7 +1017,20 @@ export function ChatView({
               </a>
             </div>
           )}
-          <ChatInput onSend={send} sending={sending} allowUpload={flags.image_generation !== false} />
+          <ChatInput
+            onSend={send}
+            sending={sending}
+            allowUpload={flags.image_generation !== false}
+            mode={mode}
+            onModeChange={changeMode}
+            placeholder={
+              mode === "agent"
+                ? "Describe the task, e.g. Research this company and summarize it…"
+                : mode === "computer-use"
+                  ? "Describe what to do on the computer, e.g. Open ChatGPT…"
+                  : "Ask Human AI anything..."
+            }
+          />
         </div>
       </div>
     </div>

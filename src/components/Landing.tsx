@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Plug, MessageSquare, Bot, Monitor } from "lucide-react";
 import { ChatInput, type PendingImage } from "@/components/ChatInput";
+import type { ChatMode } from "@/components/ModeSelector";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 function newChatId() {
@@ -12,10 +13,45 @@ function newChatId() {
     : Math.random().toString(36).slice(2, 14);
 }
 
+function modeFromUrl(): ChatMode {
+  try {
+    const m = new URLSearchParams(window.location.search).get("mode");
+    if (m === "agent" || m === "computer-use") return m;
+  } catch {
+    // ignore
+  }
+  return "chat";
+}
+
+function goalFromUrl(): string {
+  try {
+    return new URLSearchParams(window.location.search).get("goal") ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export default function LandingInner({ user }: { user: SupabaseUser | null }) {
   const router = useRouter();
   const [sending, setSending] = useState(false);
   const [bgOk, setBgOk] = useState(false);
+  // Entry-point mode (/?mode=agent, /?mode=computer-use). ONE chat is created on send.
+  const [mode, setMode] = useState<ChatMode>("chat");
+  const [initialGoal] = useState(() => goalFromUrl());
+
+  useEffect(() => {
+    setMode(modeFromUrl());
+  }, []);
+
+  function pickMode(m: ChatMode) {
+    setMode(m);
+    try {
+      const url = m === "chat" ? "/" : `/?mode=${m}`;
+      window.history.replaceState(null, "", url);
+    } catch {
+      // ignore
+    }
+  }
 
   useEffect(() => {
     const probe = new Image();
@@ -29,7 +65,7 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
     try {
       sessionStorage.setItem(
         `humanai-pending-${chatId}`,
-        JSON.stringify({ text, images })
+        JSON.stringify({ text, images, mode })
       );
     } catch {
       // storage unavailable — chat page will show empty state
@@ -73,27 +109,24 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
           <h1 className="mb-8 text-center text-5xl font-black tracking-[0.24em] text-white sm:text-7xl">
             HUMAN AI
           </h1>
-          <ChatInput onSend={handleSend} sending={sending} mode="chat" />
+          <ChatInput onSend={handleSend} sending={sending} mode={mode} onModeChange={pickMode} initialText={initialGoal} />
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
             <button
-              onClick={() => {
-                const chatId = newChatId();
-                router.push(`/chat/${chatId}`);
-              }}
+              onClick={() => pickMode("chat")}
               className="inline-flex items-center gap-2 rounded-full border border-ink-600 bg-ink-900/80 px-4 py-2 text-sm font-medium text-zinc-200 transition-all hover:border-ink-500 hover:text-white"
             >
               <MessageSquare size={15} className="text-accent" />
               Chat
             </button>
             <button
-              onClick={() => router.push("/agent")}
+              onClick={() => pickMode("agent")}
               className="inline-flex items-center gap-2 rounded-full border border-ink-600 bg-ink-900/80 px-4 py-2 text-sm font-medium text-zinc-200 transition-all hover:border-ink-500 hover:text-white"
             >
               <Bot size={15} className="text-accent" />
               Agent
             </button>
             <button
-              onClick={() => router.push("/computer-use")}
+              onClick={() => pickMode("computer-use")}
               className="inline-flex items-center gap-2 rounded-full border border-ink-600 bg-ink-900/80 px-4 py-2 text-sm font-medium text-zinc-200 transition-all hover:border-ink-500 hover:text-white"
             >
               <Monitor size={15} className="text-accent" />
