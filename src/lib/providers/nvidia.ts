@@ -232,3 +232,59 @@ export function createNvidiaProvider(providerModelId: string): AIProvider {
       requestNvidia(providerModelId, messages, true, opts?.onToken, opts?.signal),
   };
 }
+
+/** Non-streaming chat with native function calling. Returns text + tool calls. */
+export async function chatWithTools(
+  providerModelId: string,
+  openAiMessages: OpenAIMessage[],
+  tools: ToolDef[],
+  signal?: AbortSignal
+): Promise<{ text: string; toolCalls: ToolCallReq[] }> {
+  const apiKey = process.env.NVIDIA_API_KEY;
+  if (!apiKey) throw new Error("NVIDIA_API_KEY is not configured on the server.");
+
+  const timeout = AbortSignal.timeout(60_000);
+  const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+
+  const res = await fetch(`${BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: providerModelId,
+      messages: openAiMessages,
+      tools: tools.map((t) => ({
+        type: "function",
+        function: { name: t.name, description: t.description, parameters: t.parameters },
+      })),
+      temperature: 0.4,
+      top_p: 0.9,
+      max_tokens: 2048,
+      stream: false,
+    }),
+    signal: combined,
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`NVIDIA API error ${res.status}: ${errText.slice(0, 500)}`);
+  }
+  const json = (await res.json()) as {
+    choices?: Array<{
+      message?: {
+        content?: string | null;
+        tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+      };
+    }>;
+  };
+  const msg = json.choices?.[0]?.message;
+  return {
+    text: msg?.content ?? "",
+    toolCalls: (msg?.tool_calls ?? []).map((tc, i) => ({
+      id: tc.id || `call_${i}`,
+      name: tc.function.name,
+      arguments: tc.function.arguments || "{}",
+    })),
+  };
+}
