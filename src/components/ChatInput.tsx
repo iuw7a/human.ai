@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { ArrowUp, ImagePlus, Loader2, X } from "lucide-react";
+import { ModeSelector, type ChatMode } from "./ModeSelector";
 
 export interface PendingImage {
   dataUrl: string;
@@ -17,11 +18,15 @@ export function ChatInput({
   sending,
   placeholder = "Ask Human AI anything...",
   allowUpload = true,
+  mode = "chat",
+  showModeSelector = true,
 }: {
   onSend: (text: string, images: PendingImage[]) => void;
   sending: boolean;
   placeholder?: string;
   allowUpload?: boolean;
+  mode?: ChatMode;
+  showModeSelector?: boolean;
 }) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<PendingImage[]>([]);
@@ -122,24 +127,29 @@ export function ChatInput({
           className="max-h-[200px] w-full resize-none bg-transparent px-2 py-1 text-[15px] leading-6 text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
         />
         <div className="mt-1 flex items-center justify-between px-1">
-          <input
-            ref={fileRef}
-            type="file"
-            accept={ACCEPTED.join(",")}
-            multiple
-            className="hidden"
-            onChange={(e) => handleFiles(e.target.files)}
-          />
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-ink-800 hover:text-white"
-            aria-label="Upload image"
-            title={allowUpload ? "Upload image" : "Image uploads are disabled"}
-            disabled={!allowUpload}
-            style={allowUpload ? undefined : { opacity: 0.35, pointerEvents: "none" }}
-          >
-            <ImagePlus size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept={ACCEPTED.join(",")}
+              multiple
+              className="hidden"
+              onChange={(e) => handleFiles(e.target.files)}
+            />
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-ink-800 hover:text-white"
+              aria-label="Upload image"
+              title={allowUpload ? "Upload image" : "Image uploads are disabled"}
+              disabled={!allowUpload}
+              style={allowUpload ? undefined : { opacity: 0.35, pointerEvents: "none" }}
+            >
+              <ImagePlus size={18} />
+            </button>
+            {showModeSelector && (
+              <ModeSelector value={mode} getDraft={() => text} />
+            )}
+          </div>
           <button
             onClick={submit}
             disabled={sending || (!text.trim() && images.length === 0)}

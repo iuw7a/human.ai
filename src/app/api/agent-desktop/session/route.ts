@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (e) {
     return Response.json(
-      { error: e instanceof Error ? e.message : "Could not start desktop session." },
+      { error: e instanceof Error ? e.message : "Could not start computer session." },
       { status: 500 }
     );
   }

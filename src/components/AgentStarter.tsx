@@ -3,10 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Bot, Loader2, ArrowRight } from "lucide-react";
+import { ModeSelector } from "./ModeSelector";
 
-export function AgentStarter() {
+export function AgentStarter({ initialGoal = "" }: { initialGoal?: string }) {
   const router = useRouter();
-  const [goal, setGoal] = useState("");
+  const [goal, setGoal] = useState(initialGoal);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,9 +50,12 @@ export function AgentStarter() {
           className="max-h-[200px] w-full resize-none bg-transparent px-2 py-1 text-[15px] leading-6 text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
         />
         <div className="mt-1 flex items-center justify-between px-1">
-          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500">
-            <Bot size={14} className="text-accent" /> Isolated Chromium session
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="hidden items-center gap-1.5 text-xs text-zinc-500 sm:inline-flex">
+              <Bot size={14} className="text-accent" /> Isolated browser session
+            </span>
+            <ModeSelector value="agent" getDraft={() => goal} />
+          </div>
           <button type="submit" disabled={busy || !goal.trim()} className="btn-send" aria-label="Start agent task">
             {busy ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={17} />}
           </button>

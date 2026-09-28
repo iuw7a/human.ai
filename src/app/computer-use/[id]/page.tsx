@@ -6,14 +6,14 @@ import { getDesktopSession } from "@/lib/desktop/session";
 
 export const dynamic = "force-dynamic";
 
-export default async function DesktopSessionPage({ params }: { params: { id: string } }) {
+export default async function ComputerUseSessionPage({ params }: { params: { id: string } }) {
   const supabase = createServerSupabase();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/login?next=/desktop");
+  if (!user) redirect("/login?next=/computer-use");
   const s = getDesktopSession(params.id, user.id);
-  if (!s) redirect("/desktop");
+  if (!s) redirect("/computer-use");
 
   return (
     <AppShell>

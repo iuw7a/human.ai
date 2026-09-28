@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Plug } from "lucide-react";
+import { Plug, MessageSquare, Bot, Monitor } from "lucide-react";
 import { ChatInput, type PendingImage } from "@/components/ChatInput";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -73,8 +73,34 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
           <h1 className="mb-8 text-center text-5xl font-black tracking-[0.24em] text-white sm:text-7xl">
             HUMAN AI
           </h1>
-          <ChatInput onSend={handleSend} sending={sending} />
-          <div className="mt-5 flex justify-center">
+          <ChatInput onSend={handleSend} sending={sending} mode="chat" />
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+            <button
+              onClick={() => {
+                const chatId = newChatId();
+                router.push(`/chat/${chatId}`);
+              }}
+              className="inline-flex items-center gap-2 rounded-full border border-ink-600 bg-ink-900/80 px-4 py-2 text-sm font-medium text-zinc-200 transition-all hover:border-ink-500 hover:text-white"
+            >
+              <MessageSquare size={15} className="text-accent" />
+              Chat
+            </button>
+            <button
+              onClick={() => router.push("/agent")}
+              className="inline-flex items-center gap-2 rounded-full border border-ink-600 bg-ink-900/80 px-4 py-2 text-sm font-medium text-zinc-200 transition-all hover:border-ink-500 hover:text-white"
+            >
+              <Bot size={15} className="text-accent" />
+              Agent
+            </button>
+            <button
+              onClick={() => router.push("/computer-use")}
+              className="inline-flex items-center gap-2 rounded-full border border-ink-600 bg-ink-900/80 px-4 py-2 text-sm font-medium text-zinc-200 transition-all hover:border-ink-500 hover:text-white"
+            >
+              <Monitor size={15} className="text-accent" />
+              Computer Use
+            </button>
+          </div>
+          <div className="mt-3 flex justify-center">
             <button
               onClick={() => router.push("/mcp")}
               className="inline-flex items-center gap-2 rounded-full border border-accent/50 bg-accent/10 px-5 py-2.5 text-sm font-medium text-red-100 shadow-[0_0_24px_rgba(229,72,77,0.25)] transition-all hover:bg-accent/20 hover:shadow-[0_0_32px_rgba(229,72,77,0.4)]"

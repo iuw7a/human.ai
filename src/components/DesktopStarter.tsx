@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Monitor, Loader2, ArrowRight, ShieldAlert } from "lucide-react";
+import { ModeSelector } from "./ModeSelector";
 
 export function DesktopStarter({ initialGoal = "" }: { initialGoal?: string }) {
   const router = useRouter();
@@ -28,7 +29,7 @@ export function DesktopStarter({ initialGoal = "" }: { initialGoal?: string }) {
       });
       const j = await res.json().catch(() => null);
       if (!res.ok) throw new Error(j?.error ?? `Failed (${res.status}).`);
-      router.push(`/desktop/${j.sessionId}`);
+      router.push(`/computer-use/${j.sessionId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start.");
       setBusy(false);
@@ -50,7 +51,7 @@ export function DesktopStarter({ initialGoal = "" }: { initialGoal?: string }) {
           value={goal}
           onChange={(e) => setGoal(e.target.value)}
           rows={2}
-          placeholder="Describe the desktop task, e.g. Open Notepad and write a shopping list…"
+          placeholder="Describe the computer task, e.g. Open Notepad and write a shopping list…"
           className="max-h-[200px] w-full resize-none bg-transparent px-2 py-1 text-[15px] leading-6 text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
         />
         <label className="mt-1 flex cursor-pointer items-start gap-2 px-2 text-[13px] leading-5 text-zinc-400">
@@ -66,9 +67,12 @@ export function DesktopStarter({ initialGoal = "" }: { initialGoal?: string }) {
           </span>
         </label>
         <div className="mt-2 flex items-center justify-between px-1">
-          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500">
-            <Monitor size={14} className="text-accent" /> Real desktop session
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="hidden items-center gap-1.5 text-xs text-zinc-500 sm:inline-flex">
+              <Monitor size={14} className="text-accent" /> Real computer session
+            </span>
+            <ModeSelector value="computer-use" getDraft={() => goal} />
+          </div>
           <button type="submit" disabled={busy || !goal.trim()} className="btn-send" aria-label="Take control">
             {busy ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={17} />}
           </button>

@@ -133,7 +133,7 @@ export function DesktopView({
   async function newTask(e: React.FormEvent) {
     e.preventDefault();
     if (!followUp.trim()) return;
-    router.push(`/desktop/new?goal=${encodeURIComponent(followUp.trim())}`);
+    router.push(`/computer-use?goal=${encodeURIComponent(followUp.trim())}`);
   }
 
   return (
@@ -141,7 +141,7 @@ export function DesktopView({
       <div className="flex items-center justify-between border-b border-ink-800 px-4 py-2.5 sm:px-6">
         <div className="flex min-w-0 items-center gap-2 pl-10 lg:pl-0">
           <Monitor size={16} className="shrink-0 text-accent" />
-          <span className="truncate text-sm font-medium text-white">Desktop Control</span>
+          <span className="truncate text-sm font-medium text-white">Computer Use</span>
           <span className="hidden truncate text-xs text-zinc-500 sm:inline">· {initialGoal}</span>
         </div>
         <button
@@ -214,7 +214,7 @@ export function DesktopView({
               <input
                 value={followUp}
                 onChange={(e) => setFollowUp(e.target.value)}
-                placeholder="New desktop task (fresh session)…"
+                placeholder="New Computer Use task (fresh session)…"
                 className="input"
               />
               <button type="submit" className="btn-primary shrink-0 text-xs">
@@ -227,7 +227,7 @@ export function DesktopView({
         <div className="flex min-h-0 flex-col bg-ink-950">
           <div className="border-b border-ink-800 px-4 py-2">
             <p className="text-xs text-zinc-500">
-              Reference view — you are watching the <b className="text-zinc-300">real desktop</b> directly.
+              Reference view — you are watching the <b className="text-zinc-300">real computer</b> directly.
               The blue frame marks agent control.
             </p>
           </div>
@@ -236,7 +236,7 @@ export function DesktopView({
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={`data:image/jpeg;base64,${shot}`}
-                alt="Current desktop observation"
+                alt="Current computer observation"
                 className="w-full max-w-3xl rounded-xl border border-ink-700 shadow-2xl"
               />
             ) : (
