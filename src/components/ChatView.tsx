@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, ThumbsUp, ThumbsDown, Globe, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown } from "lucide-react";
+import { Check, Copy, ThumbsUp, ThumbsDown, Globe, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
 import { ChatInput, type PendingImage } from "./ChatInput";
 import { Markdown } from "./Markdown";
 import { AvatarMark } from "./Logo";
@@ -1042,23 +1042,32 @@ export function ChatView({
 
       <div className="relative z-10">
         <div className="mx-auto w-full max-w-3xl px-4 pb-5 pt-2 sm:px-6">
-          {mcpServers.length > 0 && (
-            <div className="mb-2 flex flex-wrap items-center justify-center gap-1.5">
-              {mcpServers.map((s) => (
-                <a
-                  key={s.id}
-                  href={`/mcp/${s.id}`}
-                  title={`${s.name} connected — manage`}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20"
-                >
-                  <Plug size={11} /> {s.name}
-                </a>
-              ))}
+          <div className="mb-2 flex flex-wrap items-center justify-center gap-1.5">
+            {mcpServers.map((s) => (
+              <a
+                key={s.id}
+                href={`/mcp/${s.id}`}
+                title={`${s.name} connected — manage`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20"
+              >
+                <Plug size={11} /> {s.name}
+              </a>
+            ))}
+            {mcpServers.length > 0 && (
               <a href="/mcp" title="Browse MCP Marketplace" className="text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-200 hover:underline">
                 + Add
               </a>
-            </div>
-          )}
+            )}
+            <a
+              href="https://barada.cloud/"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Try Barada AI"
+              className="inline-flex items-center gap-1.5 rounded-full border border-accent/50 bg-accent/10 px-2.5 py-1 text-[11px] font-medium text-red-100 transition-colors hover:bg-accent/20"
+            >
+              <Sparkles size={11} /> Try Barada AI
+            </a>
+          </div>
           <ChatInput
             onSend={send}
             sending={sending}
