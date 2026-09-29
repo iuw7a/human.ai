@@ -4,6 +4,7 @@ import { HUMAN_AI_SYSTEM_PROMPT } from "@/lib/systemPrompt";
 import { createNvidiaProvider, streamChatWithTools, toOpenAIMessage, type OpenAIMessage, type ToolCallReq } from "@/lib/providers/nvidia";
 import { resolveDbModel, logAppError } from "@/lib/admin";
 import { connectedTools, executeTool } from "@/lib/mcp/catalog";
+import { isSearchEnabled, WEB_SEARCH_TOOL, webSearch } from "@/lib/search/langsearch";
 import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
 import type { ChatMessageInput } from "@/lib/providers/types";
 
@@ -145,6 +146,13 @@ export async function POST(req: NextRequest) {
       systemContent += `\n\nCONNECTED MCP SERVERS for this user: ${mcpServerNames}. Only call a function when the user explicitly needs live or external data from these servers (prices, records, docs, lookups). For greetings, smalltalk, explanations, and anything answerable from knowledge or chat history, answer directly WITHOUT calling tools. Never call a tool just to acknowledge a message.`;
     }
 
+    // Built-in live web search (server key) — works for everyone, no setup needed.
+    const searchOn = isSearchEnabled();
+    if (searchOn) {
+      mcpTools.push({ ...WEB_SEARCH_TOOL });
+      systemContent += `\n\nYou also have a built-in web_search function. Use it whenever the user asks about recent events, current data, prices, documentation, or anything that may be newer than your training data. Always cite the source URLs in your answer.`;
+    }
+
     // Smalltalk fast path: greetings and one-liners never need tools.
     // Stops trigger-happy tool calls ("yo" → search_docs → failure essay).
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
@@ -182,13 +190,25 @@ export async function POST(req: NextRequest) {
             const used: { server: string; tool: string }[] = [];
             const settled = await Promise.all(
               toolCalls.slice(0, 4).map(async (tc) => {
-                const def = mcpByOpenName.get(tc.name);
                 let args: Record<string, unknown> = {};
                 try {
                   args = JSON.parse(tc.arguments || "{}");
                 } catch {
                   args = {};
                 }
+                if (tc.name === WEB_SEARCH_TOOL.name) {
+                  try {
+                    const out = await webSearch(
+                      String(args.query ?? ""),
+                      typeof args.count === "number" ? args.count : 5
+                    );
+                    used.push({ server: "Web Search", tool: "search" });
+                    return { tc, result: out };
+                  } catch (e) {
+                    return { tc, result: e instanceof Error ? e.message : "Web search failed." };
+                  }
+                }
+                const def = mcpByOpenName.get(tc.name);
                 if (!def || !effectiveUserId) {
                   return { tc, result: "Unknown tool — do not call it again." };
                 }
