@@ -17,8 +17,13 @@ interface BodyMessage {
   images?: { url: string }[];
 }
 
-function sanitize(messages: BodyMessage[]): ChatMessageInput[] {
-  return messages
+/** Transient provider failures worth one retry (NVIDIA 5xx, timeouts, connection resets). */
+function isRetryableProviderError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  return /NVIDIA API error 5\d\d|timeout|aborted|abort|TimeoutError|fetch failed|ECONN|EAI_AGAIN/i.test(msg);
+}
+
+function sanitize(messages: BodyMessage[]): ChatMessageInput[] {  return messages
     .filter((m) => m && (m.content || (m.images && m.images.length > 0)))
     .slice(-30)
     .map((m) => ({
@@ -180,12 +185,25 @@ export async function POST(req: NextRequest) {
           // Agentic loop: stream text, execute requested MCP tools, repeat.
           const history: OpenAIMessage[] = withIdentity.map(toOpenAIMessage);
           for (let round = 0; round < 4; round++) {
-            const { toolCalls }: { toolCalls: ToolCallReq[] } = await streamChatWithTools(
-              resolved.providerModelId,
-              history,
-              mcpTools,
-              { onToken: (token) => send(JSON.stringify({ token })) }
-            );
+            let toolCalls: ToolCallReq[] = [];
+            for (let attempt = 0; ; attempt++) {
+              try {
+                ({ toolCalls } = await streamChatWithTools(
+                  resolved.providerModelId,
+                  history,
+                  mcpTools,
+                  { onToken: (token) => send(JSON.stringify({ token })) }
+                ));
+                break;
+              } catch (e) {
+                // One retry for transient provider failures (NVIDIA 5xx, timeouts).
+                if (attempt === 0 && isRetryableProviderError(e)) {
+                  await new Promise((r) => setTimeout(r, 2500));
+                  continue;
+                }
+                throw e;
+              }
+            }
             if (toolCalls.length === 0) break;
             const used: { server: string; tool: string }[] = [];
             const settled = await Promise.all(
@@ -248,10 +266,12 @@ export async function POST(req: NextRequest) {
         } catch (e) {
           const raw = e instanceof Error ? e.message : "Generation failed.";
           const friendly =
-            /timeout|aborted|abort/i.test(raw) ||
-            (e instanceof Error && e.name === "TimeoutError")
-              ? "The AI provider timed out. Check your NVIDIA account credits/entitlement for this model and try again."
-              : raw;
+            /NVIDIA API error 5\d\d|inference-connection|Inference connection error/i.test(raw)
+              ? "NVIDIA's AI servers are temporarily overloaded. Wait a few seconds and send your message again."
+              : /timeout|aborted|abort/i.test(raw) ||
+                (e instanceof Error && e.name === "TimeoutError")
+                ? "The AI provider timed out. Check your NVIDIA account credits/entitlement for this model and try again."
+                : raw;
           void logAppError("api/chat", raw, { model: resolved.id });
           send(JSON.stringify({ error: friendly }));
         } finally {
