@@ -14,22 +14,32 @@ export function isSearchEnabled(): boolean {
 export const WEB_SEARCH_TOOL = {
   name: "web_search",
   description:
-    "Search the live web for current information (news, prices, docs, recent events, anything beyond training data). Returns titles, URLs and snippets — always cite source URLs in the answer.",
+    "Search the live web for current information (news, prices, docs, recent events, anything beyond training data). QUERY RULES (strict): pass ONLY a short keyword query, 2-8 words, preferably English — NEVER the raw user message, NEVER instructions like 'search the web' or 'suche im web'. Example: user asks 'suche im web was ist barada ai' → query 'Barada AI barada.cloud'. Returns titles, URLs and snippets — always cite source URLs in the answer.",
   parameters: {
     type: "object",
     properties: {
-      query: { type: "string", description: "Search query" },
+      query: { type: "string", description: "Clean keyword query, 2-8 words, preferably English" },
       count: { type: "number", description: "Results, 1-10 (default 5)" },
     },
     required: ["query"],
   },
 };
 
+/** Strip instruction wrappers models sometimes include ("search the web for X"). */
+function cleanQuery(q: string): string {
+  const stripped = q
+    .trim()
+    .replace(/^(bitte\s+)?(suche(\s+im\s+web|\s+mal)?|search(\s+the\s+web)?(\s+for)?|google(\s+mal)?|find|look\s+up)\s+(nach\s+|for\s+|about\s+)?/i, "")
+    .replace(/\s+(bitte|please)\.?$/i, "")
+    .trim();
+  return stripped.length >= 2 ? stripped : q.trim();
+}
+
 /** Server-side only — key never leaves the server. Throws on failure. */
 export async function webSearch(query: string, count = 5): Promise<string> {
   const apiKey = process.env.LANGSEARCH_API_KEY;
   if (!apiKey) throw new Error("Web search is not configured on the server.");
-  const q = query.trim().slice(0, 500);
+  const q = cleanQuery(query).slice(0, 500);
   if (!q) throw new Error("Empty search query.");
   const n = Math.min(10, Math.max(1, Math.round(count) || 5));
   const res = await fetch(API_URL, {
