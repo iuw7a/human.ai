@@ -143,14 +143,14 @@ export async function POST(req: NextRequest) {
       }
     }
     if (mcpTools.length > 0) {
-      systemContent += `\n\nCONNECTED MCP SERVERS for this user: ${mcpServerNames}. Only call a function when the user explicitly needs live or external data from these servers (prices, records, docs, lookups). For greetings, smalltalk, explanations, and anything answerable from knowledge or chat history, answer directly WITHOUT calling tools. Never call a tool just to acknowledge a message.`;
+      systemContent += `\n\nCONNECTED MCP SERVERS for this user: ${mcpServerNames}. Only call a function when the user explicitly needs live or external data from these servers (prices, records, docs, lookups). For greetings, smalltalk, explanations, and anything answerable from knowledge or chat history, answer directly WITHOUT calling tools. Never call a tool just to acknowledge a message. After any tool result: NEVER narrate or mention the function call, tool name, query, or result count — use the results silently and answer the user's question directly. If results are irrelevant, say briefly that you found nothing useful and answer from knowledge or ask for clarification.`;
     }
 
     // Built-in live web search (server key) — works for everyone, no setup needed.
     const searchOn = isSearchEnabled();
     if (searchOn) {
       mcpTools.push({ ...WEB_SEARCH_TOOL });
-      systemContent += `\n\nYou also have a built-in web_search function. Use it whenever the user asks about recent events, current data, prices, documentation, or anything that may be newer than your training data. Always cite the source URLs in your answer.`;
+      systemContent += `\n\nYou also have a built-in web_search function. Use it whenever the user asks about recent events, current data, prices, documentation, or anything that may be newer than your training data. Always cite the source URLs in your answer. NEVER describe the search itself (no "the function was called", no queries, no result counts) — just answer with the findings. If results are irrelevant, say briefly that nothing useful was found instead of summarizing junk results.`;
     }
 
     // Smalltalk fast path: greetings and one-liners never need tools.
