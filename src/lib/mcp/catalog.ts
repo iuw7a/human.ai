@@ -98,22 +98,37 @@ export async function connectedTools(
     if (!url || server.transport !== "remote") continue;
     servers.push({ id: server.id, name: server.name });
 
-    let cached: McpTool[] = Array.isArray(c.tools_cache) ? c.tools_cache : [];
+    let usable: McpTool[] = Array.isArray(c.tools_cache) ? c.tools_cache : [];
     const stale =
       !c.tools_cached_at || Date.now() - new Date(c.tools_cached_at).getTime() > 3600_000;
-    if ((cached.length === 0 || stale) && url) {
-      try {
-        const client = new McpClient(url, { headers: authHeaders(server, c) });
-        cached = await client.listTools();
-        await admin
-          .from("mcp_connections")
-          .update({ tools_cache: cached, tools_cached_at: new Date().toISOString() })
-          .eq("id", c.id);
-      } catch {
-        // keep stale cache rather than breaking chat
+    if ((usable.length === 0 || stale) && url) {
+      // Stale-while-revalidate: a hanging MCP server must NEVER delay chat start.
+      const refresh = (async (): Promise<McpTool[] | null> => {
+        try {
+          const client = new McpClient(url, { headers: authHeaders(server, c), timeoutMs: 10000 });
+          const fresh = await client.listTools();
+          await admin
+            .from("mcp_connections")
+            .update({ tools_cache: fresh, tools_cached_at: new Date().toISOString() })
+            .eq("id", c.id);
+          return fresh;
+        } catch {
+          // keep stale cache rather than breaking chat
+          return null;
+        }
+      })();
+      if (usable.length === 0) {
+        // Cold start: wait briefly, then proceed with whatever we have.
+        const fresh = await Promise.race([
+          refresh,
+          new Promise<null>((r) => setTimeout(() => r(null), 8000)),
+        ]);
+        if (fresh) usable = fresh;
+      } else {
+        void refresh; // warm cache: serve now, refresh in background
       }
     }
-    for (const t of cached.slice(0, 24)) {
+    for (const t of usable.slice(0, 24)) {
       tools.push({
         name: `${server.id}__${t.name}`.slice(0, 64),
         description: `[${server.name}] ${t.description ?? t.name}`.slice(0, 1024),
