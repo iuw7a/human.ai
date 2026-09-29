@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Plug, MessageSquare, Bot, Monitor } from "lucide-react";
 import { ChatInput, type PendingImage } from "@/components/ChatInput";
 import type { ChatMode } from "@/components/ModeSelector";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
@@ -110,38 +109,6 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
             HUMAN AI
           </h1>
           <ChatInput onSend={handleSend} sending={sending} mode={mode} onModeChange={pickMode} initialText={initialGoal} />
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-            <button
-              onClick={() => pickMode("chat")}
-              className="inline-flex items-center gap-2 rounded-full border border-ink-600 bg-ink-900/80 px-4 py-2 text-sm font-medium text-zinc-200 transition-all hover:border-ink-500 hover:text-white"
-            >
-              <MessageSquare size={15} className="text-accent" />
-              Chat
-            </button>
-            <button
-              onClick={() => pickMode("agent")}
-              className="inline-flex items-center gap-2 rounded-full border border-ink-600 bg-ink-900/80 px-4 py-2 text-sm font-medium text-zinc-200 transition-all hover:border-ink-500 hover:text-white"
-            >
-              <Bot size={15} className="text-accent" />
-              Agent
-            </button>
-            <button
-              onClick={() => pickMode("computer-use")}
-              className="inline-flex items-center gap-2 rounded-full border border-ink-600 bg-ink-900/80 px-4 py-2 text-sm font-medium text-zinc-200 transition-all hover:border-ink-500 hover:text-white"
-            >
-              <Monitor size={15} className="text-accent" />
-              Computer Use
-            </button>
-          </div>
-          <div className="mt-3 flex justify-center">
-            <button
-              onClick={() => router.push("/mcp")}
-              className="inline-flex items-center gap-2 rounded-full border border-accent/50 bg-accent/10 px-5 py-2.5 text-sm font-medium text-red-100 shadow-[0_0_24px_rgba(229,72,77,0.25)] transition-all hover:bg-accent/20 hover:shadow-[0_0_32px_rgba(229,72,77,0.4)]"
-            >
-              <Plug size={15} />
-              Connect Human AI to MCP Servers
-            </button>
-          </div>
         </div>
       </div>
       <footer className="relative z-10 flex items-center justify-center gap-4 px-4 py-4 text-xs text-zinc-500">
