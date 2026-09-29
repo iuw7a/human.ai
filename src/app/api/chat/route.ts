@@ -142,8 +142,18 @@ export async function POST(req: NextRequest) {
       }
     }
     if (mcpTools.length > 0) {
-      systemContent += `\n\nCONNECTED MCP SERVERS for this user: ${mcpServerNames}. You have function tools from these servers — call them when they can help answer (data lookups, prices, records, docs). Prefer calling a function over guessing. Only use tools from this list.`;
+      systemContent += `\n\nCONNECTED MCP SERVERS for this user: ${mcpServerNames}. Only call a function when the user explicitly needs live or external data from these servers (prices, records, docs, lookups). For greetings, smalltalk, explanations, and anything answerable from knowledge or chat history, answer directly WITHOUT calling tools. Never call a tool just to acknowledge a message.`;
     }
+
+    // Smalltalk fast path: greetings and one-liners never need tools.
+    // Stops trigger-happy tool calls ("yo" → search_docs → failure essay).
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    const lastText = (lastUser?.content ?? "").trim();
+    const lastHasImages = (lastUser?.images ?? []).length > 0;
+    const SMALLTALK =
+      /^(yo|hi+|hey+|hallo+|hello+|servus|moin|na+|ok|okay+|danke\w*|thanks?|bitte|ja|nein|yes|no+|was\s+ist\s+das\??|wer\s+bist\s+du\??|wie\s+geht'?s\??)\s*[!?.…]*$/i;
+    const skipTools =
+      mcpTools.length > 0 && !lastHasImages && lastText.length <= 40 && SMALLTALK.test(lastText);
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -151,7 +161,7 @@ export async function POST(req: NextRequest) {
         const send = (data: string) =>
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
         try {
-          if (mcpTools.length === 0) {
+          if (mcpTools.length === 0 || skipTools) {
             await provider.stream(withIdentity, {
               onToken: (token) => send(JSON.stringify({ token })),
             });
