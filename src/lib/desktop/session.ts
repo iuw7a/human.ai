@@ -33,6 +33,9 @@ export interface DesktopSession {
   overlayOk: boolean;
   screenW: number;
   screenH: number;
+  /** Last known cursor pos (tracked locally to skip a PowerShell spawn per step). */
+  cursorX: number;
+  cursorY: number;
   consecutiveErrors: number;
   createdAt: number;
   lastActive: number;
@@ -81,6 +84,8 @@ export async function createDesktopSession(
     overlayOk: false,
     screenW: 0,
     screenH: 0,
+    cursorX: -1,
+    cursorY: -1,
     consecutiveErrors: 0,
     createdAt: Date.now(),
     lastActive: Date.now(),

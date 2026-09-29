@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const { sessionId } = (await req.json()) as { sessionId?: string };
+    const t0 = Date.now();
     const s = getSession(sessionId ?? "", user.id);
     if (!s) return Response.json({ error: "Session not found." }, { status: 404 });
     if (s.status === "done") {
@@ -189,6 +190,7 @@ export async function POST(req: NextRequest) {
       steps: s.history.length,
       screenshot: shot,
       message: text || undefined,
+      elapsedMs: Date.now() - t0,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Agent step failed.";

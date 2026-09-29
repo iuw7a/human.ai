@@ -175,6 +175,7 @@ interface ActivityStep {
   n: number;
   status: string;
   message?: string;
+  ms?: number;
 }
 
 interface ModeActivity {
@@ -278,6 +279,9 @@ function ModeActivityCard({
               <p className="text-xs font-medium text-zinc-200">
                 <span className="mr-2 font-mono text-[10px] text-zinc-500">#{s.n}</span>
                 {s.status}
+                {s.ms != null && (
+                  <span className="ml-2 font-mono text-[10px] text-zinc-500">{(s.ms / 1000).toFixed(1)}s</span>
+                )}
               </p>
               {s.message && <p className="mt-0.5 text-xs leading-5 text-zinc-500">{s.message}</p>}
             </div>
@@ -756,12 +760,13 @@ export function ChatView({
       }
       const status = String(j.status ?? j.action ?? "Working…");
       const observation = j.observation ? String(j.observation).slice(0, 300) : undefined;
+      const ms = typeof j.elapsedMs === "number" ? j.elapsedMs : undefined;
       setActivity((a) =>
         a
           ? {
               ...a,
               status,
-              steps: [...a.steps, { n: ++stepNo, status, message: observation }].slice(-30),
+              steps: [...a.steps, { n: ++stepNo, status, message: observation, ms }].slice(-30),
             }
           : a
       );

@@ -154,6 +154,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const { sessionId } = (await req.json()) as { sessionId?: string };
+    const t0 = Date.now();
+    const timed = <T extends Record<string, unknown>>(o: T) => ({ ...o, elapsedMs: Date.now() - t0 });
     const s = getDesktopSession(sessionId ?? "", user.id);
     if (!s) return Response.json({ error: "Session not found." }, { status: 404 });
     if (s.stopFlag) {
@@ -179,11 +181,21 @@ export async function POST(req: NextRequest) {
       return Response.json({ done: true, message, status: s.status });
     }
 
-    // 1) Perceive: current screen + real cursor position (one PowerShell spawn).
-    const [shot, st] = await Promise.all([captureScreen(), screenState()]);
+    // 1) Perceive: screenshot. Cursor is tracked locally (refreshed every 5 steps)
+    // to skip a PowerShell spawn on most steps.
+    const shot = await captureScreen();
     s.screenW = shot.width;
     s.screenH = shot.height;
-    const cursor = { x: st.cx, y: st.cy };
+    if (s.cursorX < 0 || desktopTaskSteps(s) % 5 === 0) {
+      try {
+        const st = await screenState();
+        s.cursorX = st.cx;
+        s.cursorY = st.cy;
+      } catch {
+        // keep last known — cursor is only a hint
+      }
+    }
+    const cursor = { x: s.cursorX, y: s.cursorY };
 
     // Anti-loop: warn when the exact same action repeats.
     let repeatWarning = "";
@@ -251,7 +263,7 @@ export async function POST(req: NextRequest) {
       const summary = String(args.summary ?? "Task completed.").slice(0, 2000);
       s.history.push({ n: s.history.length + 1, action: "finish", observation: summary, ok: true, at: new Date().toISOString() });
       await logAgentRun(user.id, s.id, `[desktop] ${s.goal}`, "done", s.history);
-      return Response.json({ done: true, message: summary, status: s.status, screenshot: shot.base64 });
+      return Response.json(timed({ done: true, message: summary, status: s.status, screenshot: shot.base64 }));
     }
 
     if (tc.name === "request_approval") {
@@ -284,13 +296,16 @@ export async function POST(req: NextRequest) {
       switch (tc.name) {
         case "mouse_move":
           await mouseMove(sx(args.x), sy(args.y));
+          s.cursorX = sx(args.x);
+          s.cursorY = sy(args.y);
           observation = `Moved mouse to (${args.x}, ${args.y}).`;
           break;
         case "click": {
+          // mouseClick positions the cursor itself — one spawn instead of two.
           const btn = args.button === "right" || args.button === "middle" ? (args.button as "right" | "middle") : "left";
-          await mouseMove(sx(args.x), sy(args.y));
-          const { mouseClick } = await import("@/lib/desktop/control");
           await mouseClick(btn, sx(args.x), sy(args.y));
+          s.cursorX = sx(args.x);
+          s.cursorY = sy(args.y);
           observation = `Clicked (${args.x}, ${args.y}) with ${btn} button.`;
           break;
         }
@@ -348,7 +363,7 @@ export async function POST(req: NextRequest) {
 
     // 4) Observe: fresh screenshot.
     const after = await captureScreen();
-    return Response.json({
+    return Response.json(timed({
       done: false,
       status: statusFor(tc.name),
       action: tc.name,
@@ -357,7 +372,7 @@ export async function POST(req: NextRequest) {
       steps: s.history.length,
       screen: { width: after.width, height: after.height },
       screenshot: after.base64,
-    });
+    }));
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Agent step failed.";
     void logAppError("api/agent-desktop/step", msg);
