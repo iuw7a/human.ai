@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { resolveDbModel, logAppError } from "@/lib/admin";
-import { chatWithTools } from "@/lib/providers/nvidia";
+import { chatWithToolsFor } from "@/lib/providers/registry";
 import {
   getSession,
   pageState,
@@ -95,7 +95,8 @@ export async function POST(req: NextRequest) {
     const providerModelId = model?.providerModelId ?? "meta/llama-3.2-11b-vision-instruct";
 
     // 2) Decide (single model call with browser tools).
-    const { text, toolCalls } = await chatWithTools(
+    const { text, toolCalls } = await chatWithToolsFor(
+      model?.provider ?? "nvidia",
       providerModelId,
       [
         { role: "system", content: AGENT_SYSTEM_PROMPT },

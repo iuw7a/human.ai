@@ -11,7 +11,7 @@ interface M {
 export function ModelsManager() {
   const [models, setModels] = useState<M[]>([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ slug: "", name: "", provider_model_id: "", vision: true, plan: "free" });
+  const [form, setForm] = useState({ slug: "", name: "", provider: "nvidia", provider_model_id: "", vision: true, plan: "free" });
   const { show, ToastEl } = useToast();
 
   async function load() {
@@ -45,6 +45,10 @@ export function ModelsManager() {
           <input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="slug (e.g. my-model)" className="input" />
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Display name (shown as Human AI)" className="input" />
           <input value={form.provider_model_id} onChange={(e) => setForm({ ...form, provider_model_id: e.target.value })} placeholder="Provider model id (e.g. vendor/model-x)" className="input sm:col-span-2" />
+          <select value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} className="input" title="Provider">
+            <option value="nvidia">NVIDIA</option>
+            <option value="groq">Groq</option>
+          </select>
           <select value={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.value })} className="input">
             <option value="free">Free</option>
             <option value="plus">Plus only</option>
@@ -64,7 +68,7 @@ export function ModelsManager() {
           <div key={m.id} className="card flex flex-wrap items-center gap-3 p-4">
             <div className="min-w-0 flex-1">
               <p className="font-mono text-sm text-white">{m.id} {m.is_default && <StatusPill value="default" tone="blue" />}</p>
-              <p className="truncate font-mono text-xs text-zinc-500">{m.providerModelId}</p>
+              <p className="truncate font-mono text-xs text-zinc-500">{m.provider} · {m.providerModelId}</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 <StatusPill value={m.enabled ? "enabled" : "disabled"} tone={m.enabled ? "green" : "gray"} />
                 <StatusPill value={m.plan} tone={m.plan === "plus" ? "amber" : "gray"} />
@@ -77,6 +81,13 @@ export function ModelsManager() {
               </button>
               <button onClick={() => call("PUT", { slug: m.id, plan: m.plan === "plus" ? "free" : "plus" })} className="btn-ghost !px-2.5 !py-1 text-xs border border-ink-700">
                 {m.plan === "plus" ? "→ Free" : "→ Plus"}
+              </button>
+              <button
+                onClick={() => call("PUT", { slug: m.id, provider: m.provider === "groq" ? "nvidia" : "groq" })}
+                className="btn-ghost !px-2.5 !py-1 text-xs border border-ink-700"
+                title="Switch provider"
+              >
+                → {m.provider === "groq" ? "NVIDIA" : "Groq"}
               </button>
               {!m.is_default && (
                 <button onClick={() => call("PUT", { slug: m.id, is_default: true })} className="btn-ghost !px-2.5 !py-1 text-xs border border-ink-700">

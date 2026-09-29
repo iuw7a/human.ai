@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { getModel } from "@/lib/models";
 import { HUMAN_AI_SYSTEM_PROMPT } from "@/lib/systemPrompt";
-import { createNvidiaProvider, streamChatWithTools, toOpenAIMessage, type OpenAIMessage, type ToolCallReq } from "@/lib/providers/nvidia";
+import { createProviderFor, streamChatWithToolsFor } from "@/lib/providers/registry";
+import { toOpenAIMessage, type OpenAIMessage, type ToolCallReq } from "@/lib/providers/nvidia";
 import { resolveDbModel, logAppError } from "@/lib/admin";
 import { connectedTools, executeTool } from "@/lib/mcp/catalog";
 import { isSearchEnabled, WEB_SEARCH_TOOL, webSearch } from "@/lib/search/serpapi";
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
       ...messages,
     ];
 
-    const provider = createNvidiaProvider(resolved.providerModelId);
+    const provider = createProviderFor(resolved.provider, resolved.providerModelId);
 
     // MCP tools available to THIS user (their connections only).
     const mcpByOpenName = new Map<string, { serverId: string; serverName: string; tool: string }>();
@@ -215,7 +216,8 @@ export async function POST(req: NextRequest) {
             const steer = gathered.length > 0;
             for (let attempt = 0; ; attempt++) {
               try {
-                ({ toolCalls } = await streamChatWithTools(
+                ({ toolCalls } = await streamChatWithToolsFor(
+                  resolved.provider,
                   resolved.providerModelId,
                   history,
                   mcpTools,

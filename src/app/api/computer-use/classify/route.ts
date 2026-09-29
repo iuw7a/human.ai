@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { resolveDbModel, logAppError } from "@/lib/admin";
-import { createNvidiaProvider } from "@/lib/providers/nvidia";
+import { createProviderFor } from "@/lib/providers/registry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
     const model = await resolveDbModel("human-ai");
     const providerModelId = model?.providerModelId ?? "meta/llama-3.2-11b-vision-instruct";
-    const provider = createNvidiaProvider(providerModelId);
+    const provider = createProviderFor(model?.provider ?? "nvidia", providerModelId);
     const convo = (history ?? [])
       .slice(-6)
       .map((m) => `${m.role === "assistant" ? "Human AI" : "User"}: ${String(m.content ?? "").slice(0, 500)}`)

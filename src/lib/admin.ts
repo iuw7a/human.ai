@@ -163,7 +163,7 @@ export async function listDbModels(): Promise<DbModel[]> {
     if (error || !data || data.length === 0) throw new Error("fallback");
     return data.map((m) => ({
       id: m.slug,
-      provider: "nvidia" as const,
+      provider: (m.provider === "groq" ? "groq" : "nvidia") as "nvidia" | "groq",
       name: m.name,
       description: "",
       providerModelId: m.provider_model_id,

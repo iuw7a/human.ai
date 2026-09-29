@@ -24,11 +24,12 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "slug, name and provider_model_id required." }, { status: 400 });
     }
     const slug = b.slug.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 48);
+    const provider = b.provider === "groq" ? "groq" : "nvidia";
     const admin = createAdminSupabase();
     const { error } = await admin.from("admin_models").insert({
       slug,
       name: b.name.slice(0, 80),
-      provider: "nvidia",
+      provider,
       provider_model_id: b.provider_model_id.slice(0, 160),
       vision: b.vision !== false,
       enabled: true,
@@ -50,13 +51,19 @@ export async function PUT(req: NextRequest) {
   if (!adminUser) return Response.json({ error: "Forbidden." }, { status: 403 });
   try {
     const b = (await req.json()) as {
-      slug?: string; name?: string; provider_model_id?: string; vision?: boolean;
+      slug?: string; name?: string; provider?: string; provider_model_id?: string; vision?: boolean;
       enabled?: boolean; plan?: string; sort?: number; is_default?: boolean;
     };
     if (!b.slug) return Response.json({ error: "slug required." }, { status: 400 });
     const admin = createAdminSupabase();
     const patch: Record<string, unknown> = {};
     if (b.name !== undefined) patch.name = b.name.slice(0, 80);
+    if (b.provider !== undefined) {
+      if (b.provider !== "nvidia" && b.provider !== "groq") {
+        return Response.json({ error: "provider must be nvidia or groq." }, { status: 400 });
+      }
+      patch.provider = b.provider;
+    }
     if (b.provider_model_id !== undefined) patch.provider_model_id = b.provider_model_id.slice(0, 160);
     if (b.vision !== undefined) patch.vision = !!b.vision;
     if (b.enabled !== undefined) patch.enabled = !!b.enabled;

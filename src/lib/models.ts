@@ -1,8 +1,8 @@
 export interface ModelConfig {
   /** Slug used in URLs, e.g. "kimi-k3" */
   id: string;
-  /** Provider key, e.g. "nvidia" */
-  provider: "nvidia";
+  /** Provider key, e.g. "nvidia" or "groq" */
+  provider: "nvidia" | "groq";
   /** Display name */
   name: string;
   /** Short description shown in UI */
