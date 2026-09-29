@@ -187,15 +187,44 @@ export async function POST(req: NextRequest) {
           let webSearched = false;
           const seenCalls = new Set<string>();
           const gathered: string[] = [];
+          const NARRATION =
+            /the function (`?\w+`? )?was called|the function call\s*\{|response from the function|result count was set/i;
+          /** Plain final answer from gathered results — never replays tool history. */
+          async function answerFromResults() {
+            const context = gathered.join("\n\n").slice(0, 12000) || "No results were gathered.";
+            await provider.stream(
+              [
+                {
+                  role: "system",
+                  content:
+                    "Answer the user's question directly using the search results below. Never mention tools, functions, queries, searches or result counts. Always cite source URLs.",
+                },
+                {
+                  role: "user",
+                  content: `QUESTION: ${lastText.slice(0, 1000)}\n\nSEARCH RESULTS:\n${context}`,
+                },
+              ],
+              { onToken: (token) => send(JSON.stringify({ token })) }
+            );
+          }
           for (let round = 0; round < 4; round++) {
             let toolCalls: ToolCallReq[] = [];
+            let roundText = "";
+            // Once data was gathered, buffer the follow-up text first:
+            // narration gets discarded before the user ever sees it.
+            const steer = gathered.length > 0;
             for (let attempt = 0; ; attempt++) {
               try {
                 ({ toolCalls } = await streamChatWithTools(
                   resolved.providerModelId,
                   history,
                   mcpTools,
-                  { onToken: (token) => send(JSON.stringify({ token })) }
+                  {
+                    onToken: (token) => {
+                      roundText += token;
+                      if (!steer) send(JSON.stringify({ token }));
+                    },
+                  }
                 ));
                 break;
               } catch (e) {
@@ -207,27 +236,22 @@ export async function POST(req: NextRequest) {
                 throw e;
               }
             }
-            if (toolCalls.length === 0) break;
+            if (toolCalls.length === 0) {
+              if (steer) {
+                if (NARRATION.test(roundText)) {
+                  await answerFromResults();
+                } else {
+                  send(JSON.stringify({ token: roundText }));
+                }
+              }
+              break;
+            }
+            if (steer) send(JSON.stringify({ token: roundText }));
             const sigs = toolCalls.slice(0, 4).map((tc) => `${tc.name}:${tc.arguments}`);
             if (sigs.every((s) => seenCalls.has(s)) || round === 3) {
-              // Model is looping on the same calls (or out of rounds):
-              // answer plainly from gathered results — no tool history replay.
+              // Model is looping on the same calls (or out of rounds).
               for (const s of sigs) seenCalls.add(s);
-              const context = gathered.join("\n\n").slice(0, 12000) || "No results were gathered.";
-              await provider.stream(
-                [
-                  {
-                    role: "system",
-                    content:
-                      "Answer the user's question directly using the search results below. Never mention tools, functions, queries, searches or result counts. Always cite source URLs.",
-                  },
-                  {
-                    role: "user",
-                    content: `QUESTION: ${lastText.slice(0, 1000)}\n\nSEARCH RESULTS:\n${context}`,
-                  },
-                ],
-                { onToken: (token) => send(JSON.stringify({ token })) }
-              );
+              await answerFromResults();
               break;
             }
             for (const s of sigs) seenCalls.add(s);
