@@ -344,6 +344,7 @@ export function ChatView({
   const stopRef = useRef(false);
   const approvalResolveRef = useRef<((approved: boolean) => void) | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const runKindRef = useRef<"agent" | "computer" | null>(null);
 
   function changeMode(m: ChatMode) {
     modeRef.current = m;
@@ -503,6 +504,7 @@ export function ChatView({
     setStreamed("");
     setError(null);
     setMcpUsed([]);
+    runKindRef.current = null;
 
     try {
       const { history, uploaded } = await prepareUserMessage(text, pendingImages);
@@ -514,9 +516,26 @@ export function ChatView({
         await runChatReply(history);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      const msg = e instanceof Error ? e.message : "Something went wrong.";
+      const kind = runKindRef.current;
+      if (kind === "computer") {
+        // Never leave the pill stuck: release mouse/keyboard + overlay on failure.
+        if (sessionIdRef.current) {
+          await fetch(`/api/agent-desktop/session?id=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
+          sessionIdRef.current = null;
+        }
+        setActivity((a) =>
+          a ? { ...a, doneText: `Computer Use stopped: ${msg.slice(0, 300)} Computer released.`, stopped: true, status: "Stopped", approval: null } : a
+        );
+      } else if (kind === "agent") {
+        setActivity((a) =>
+          a ? { ...a, doneText: `Agent stopped: ${msg.slice(0, 300)}`, stopped: true, status: "Stopped", approval: null } : a
+        );
+      } else {
+        setError(msg);
+        setActivity(null);
+      }
       setStreamed("");
-      setActivity(null);
     } finally {
       sendingRef.current = false;
       setSending(false);
@@ -631,6 +650,7 @@ export function ChatView({
     const approveUrl = isComputer ? "/api/agent-desktop/approve" : "/api/agent/approve";
     stopRef.current = false;
     sessionIdRef.current = null;
+    runKindRef.current = kind;
     let stepNo = 0;
 
     setActivity({
@@ -666,13 +686,26 @@ export function ChatView({
 
     for (let i = 0; i < 40; i++) {
       if (stopRef.current) break;
-      const res = await fetch(stepUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      });
-      const j = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(j?.error ?? `Step failed (${res.status}).`);
+      // Retry transient provider failures (e.g. NVIDIA 500) instead of aborting the task.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let j: any = null;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const res = await fetch(stepUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId }),
+          });
+          const jj = await res.json().catch(() => null);
+          if (!res.ok) throw new Error(jj?.error ?? `Step failed (${res.status}).`);
+          j = jj;
+          break;
+        } catch (err) {
+          if (attempt >= 2 || stopRef.current) throw err;
+          setActivity((a) => (a ? { ...a, status: `Provider hiccup — retrying… (${attempt + 1}/2)` } : a));
+          await new Promise((r) => setTimeout(r, 2500));
+        }
+      }
       if (j.screenshot) {
         const shot = j.screenshot as string;
         setActivity((a) => (a ? { ...a, shot } : a));
