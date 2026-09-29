@@ -1,4 +1,7 @@
 import { execFile } from "child_process";
+import { writeFileSync, readFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 const PS = "powershell.exe";
 
@@ -76,26 +79,116 @@ Write-Output "$($p.X) $($p.Y)";`);
   return { x: parseInt(m[1], 10), y: parseInt(m[2], 10) };
 }
 
-/** Screen size of the primary display. */
-export async function screenBounds(): Promise<ScreenBounds> {
+/** Screen size of the primary display (cached — size rarely changes). */
+let boundsCache: { width: number; height: number; at: number } | null = null;
+export async function screenBounds(force = false): Promise<ScreenBounds> {
+  if (!force && boundsCache && Date.now() - boundsCache.at < 5 * 60 * 1000) {
+    return { width: boundsCache.width, height: boundsCache.height };
+  }
   const out = await runPs(`
 Add-Type -AssemblyName System.Windows.Forms;
 $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds;
 Write-Output "$($b.Width) $($b.Height)";`);
   const m = out.trim().match(/(\d+)\s+(\d+)/);
   if (!m) throw new Error("Could not read screen bounds.");
-  return { width: parseInt(m[1], 10), height: parseInt(m[2], 10) };
+  boundsCache = { width: parseInt(m[1], 10), height: parseInt(m[2], 10), at: Date.now() };
+  return { width: boundsCache.width, height: boundsCache.height };
 }
 
-/** Screenshot (JPEG base64) + bounds. Native capture (AV-safe, no PowerShell). */
-export async function captureScreen(): Promise<{ base64: string; width: number; height: number }> {
+/** Bounds + cursor in ONE PowerShell spawn (saves ~1-2s per step vs two calls). */
+export async function screenState(): Promise<{ width: number; height: number; cx: number; cy: number }> {
+  const b = await screenBounds();
+  const out = await runPs(`
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public struct Pt { public int X; public int Y; }
+public static class Cur {
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out Pt p);
+}
+"@;
+$p = New-Object Pt;
+[Cur]::GetCursorPos([ref]$p) | Out-Null;
+Write-Output "$($p.X) $($p.Y)";`);
+  const m = out.trim().match(/(\d+)\s+(\d+)/);
+  return {
+    width: b.width,
+    height: b.height,
+    cx: m ? parseInt(m[1], 10) : -1,
+    cy: m ? parseInt(m[2], 10) : -1,
+  };
+}
+
+const RESIZE_PS = [
+  "param([string]$in, [string]$out, [int]$maxW, [int]$q)",
+  "Add-Type -AssemblyName System.Drawing",
+  "$bmp = [System.Drawing.Bitmap]::FromFile($in)",
+  "$w = $bmp.Width; $h = $bmp.Height",
+  "if ($w -gt $maxW) { $nw = $maxW; $nh = [int]($h * $maxW / $w) } else { $nw = $w; $nh = $h }",
+  "$dst = New-Object System.Drawing.Bitmap($nw, $nh)",
+  "$g = [System.Drawing.Graphics]::FromImage($dst)",
+  "$g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic",
+  "$g.DrawImage($bmp, 0, 0, $nw, $nh)",
+  "$enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }",
+  "$ep = New-Object System.Drawing.Imaging.EncoderParameters(1)",
+  "$ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, $q)",
+  "$dst.Save($out, $enc, $ep)",
+  "$g.Dispose(); $bmp.Dispose(); $dst.Dispose()",
+  'Write-Output "$nw $nh"',
+].join("\n");
+
+let resizeScriptPath: string | null = null;
+
+/** Downscale a JPEG buffer (file-based System.Drawing — no screen APIs, AV-safe). */
+async function downscaleJpeg(buf: Buffer, maxWidth: number, quality: number): Promise<Buffer> {
+  if (!resizeScriptPath) {
+    resizeScriptPath = join(tmpdir(), "humanai-resize.ps1");
+    writeFileSync(resizeScriptPath, RESIZE_PS, "utf8");
+  }
+  const tag = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const inFile = join(tmpdir(), `humanai-shot-${tag}.jpg`);
+  const outFile = join(tmpdir(), `humanai-shot-${tag}-small.jpg`);
+  writeFileSync(inFile, buf);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        PS,
+        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", resizeScriptPath as string, "-in", inFile, "-out", outFile, "-maxW", String(maxWidth), "-q", String(quality)],
+        { timeout: 20000, windowsHide: true },
+        (err, stdout, stderr) => {
+          if (err) reject(new Error((stderr || err.message || "").toString().slice(0, 200)));
+          else resolve();
+        }
+      );
+    });
+    return readFileSync(outFile);
+  } finally {
+    try { unlinkSync(inFile); } catch { /* ignore */ }
+    try { unlinkSync(outFile); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Screenshot (JPEG base64) + REAL screen bounds for coordinate mapping.
+ * Downscaled to max 1280px wide: far fewer vision tokens (≈40-50% faster/cheaper
+ * model calls) — the 0-1000 relative coordinates are resolution-independent.
+ */
+export async function captureScreen(maxWidth = 1280, quality = 55): Promise<{ base64: string; width: number; height: number }> {
   const b = await screenBounds();
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const shot = require("screenshot-desktop") as (opts?: {
     format?: string;
     quality?: number;
   }) => Promise<Buffer>;
-  const buf: Buffer = await shot({ format: "jpg", quality: 60 });
+  let buf: Buffer = await shot({ format: "jpg", quality: 60 });
+  if (!buf || buf.length < 1000) throw new Error("Screenshot capture failed.");
+  if (b.width > maxWidth) {
+    try {
+      buf = await downscaleJpeg(buf, maxWidth, quality);
+    } catch {
+      // fall back to full-res on resize failure — never break the task
+    }
+  }
   if (!buf || buf.length < 1000) throw new Error("Screenshot capture failed.");
   return { base64: buf.toString("base64"), width: b.width, height: b.height };
 }

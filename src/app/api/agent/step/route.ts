@@ -174,7 +174,8 @@ export async function POST(req: NextRequest) {
       ok: res.ok,
       at: new Date().toISOString(),
     });
-    await logAgentRun(user.id, s.id, s.goal, "active", s.history);
+    // Run history logging in the background — never stall the control loop on it.
+    void logAgentRun(user.id, s.id, s.goal, "active", s.history).catch(() => {});
     const [after, shot] = await Promise.all([pageState(s), screenshot(s)]);
     return Response.json({
       done: false,

@@ -804,34 +804,38 @@ export function ChatView({
    * immediately drives the persistent computer session bound to this chat.
    */
   async function runComputerTask(history: StoredMessage[], text: string, imageCount: number) {
-    setActivity({
-      kind: "computer",
-      status: "Thinking…",
-      steps: [],
-      shot: null,
-      approval: null,
-      doneText: null,
-      stopped: false,
-    });
-    let needsComputer = true;
-    try {
-      const cr = await fetch("/api/computer-use/classify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: history.slice(-6).map((m) => ({ role: m.role, content: m.content.slice(0, 500) })),
-        }),
+    // Fast path: leading imperatives (DE+EN) skip the classify roundtrip entirely.
+    const looksLikeCommand = /^\s*(bitte\s+)?(open|öffne|öffnen|geh\s+zu|go\s+to|klick|tippe|schreib|drück|scroll|such|navigier|starte|frag\s+(es|ihn|sie)|ask\s+it)\b/i.test(text);
+    if (!looksLikeCommand) {
+      setActivity({
+        kind: "computer",
+        status: "Thinking…",
+        steps: [],
+        shot: null,
+        approval: null,
+        doneText: null,
+        stopped: false,
       });
-      const cj = await cr.json().catch(() => null);
-      if (cr.ok && cj && cj.needsComputer === false) needsComputer = false;
-    } catch {
-      needsComputer = true;
-    }
-    if (!needsComputer) {
-      setActivity(null);
-      await runChatReply(history);
-      return;
+      let needsComputer = true;
+      try {
+        const cr = await fetch("/api/computer-use/classify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: text,
+            history: history.slice(-6).map((m) => ({ role: m.role, content: m.content.slice(0, 500) })),
+          }),
+        });
+        const cj = await cr.json().catch(() => null);
+        if (cr.ok && cj && cj.needsComputer === false) needsComputer = false;
+      } catch {
+        needsComputer = true;
+      }
+      if (!needsComputer) {
+        setActivity(null);
+        await runChatReply(history);
+        return;
+      }
     }
     await driveModeTask("computer", history, text, imageCount);
   }

@@ -16,7 +16,7 @@ import {
   pressKey,
   openApp,
   hotkey,
-  cursorPos,
+  screenState,
 } from "@/lib/desktop/control";
 import { logAgentRun } from "@/lib/agent/runlog";
 
@@ -97,7 +97,7 @@ async function decideVision(
         },
       ],
       temperature: 0.3,
-      max_tokens: 1024,
+      max_tokens: 400,
       stream: false,
     }),
     signal: AbortSignal.timeout(60_000),
@@ -179,16 +179,11 @@ export async function POST(req: NextRequest) {
       return Response.json({ done: true, message, status: s.status });
     }
 
-    // 1) Perceive: current screen + real cursor position.
-    const shot = await captureScreen();
+    // 1) Perceive: current screen + real cursor position (one PowerShell spawn).
+    const [shot, st] = await Promise.all([captureScreen(), screenState()]);
     s.screenW = shot.width;
     s.screenH = shot.height;
-    let cursor = { x: -1, y: -1 };
-    try {
-      cursor = await cursorPos();
-    } catch {
-      cursor = { x: -1, y: -1 };
-    }
+    const cursor = { x: st.cx, y: st.cy };
 
     // Anti-loop: warn when the exact same action repeats.
     let repeatWarning = "";
@@ -348,7 +343,8 @@ export async function POST(req: NextRequest) {
       ok,
       at: new Date().toISOString(),
     });
-    await logAgentRun(user.id, s.id, `[desktop] ${s.goal}`, "active", s.history);
+    // Run history logging in the background — never stall the control loop on it.
+    void logAgentRun(user.id, s.id, `[desktop] ${s.goal}`, "active", s.history).catch(() => {});
 
     // 4) Observe: fresh screenshot.
     const after = await captureScreen();
