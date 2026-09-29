@@ -4,7 +4,7 @@ import { HUMAN_AI_SYSTEM_PROMPT } from "@/lib/systemPrompt";
 import { createNvidiaProvider, streamChatWithTools, toOpenAIMessage, type OpenAIMessage, type ToolCallReq } from "@/lib/providers/nvidia";
 import { resolveDbModel, logAppError } from "@/lib/admin";
 import { connectedTools, executeTool } from "@/lib/mcp/catalog";
-import { isSearchEnabled, WEB_SEARCH_TOOL, webSearch } from "@/lib/search/langsearch";
+import { isSearchEnabled, WEB_SEARCH_TOOL, webSearch } from "@/lib/search/serpapi";
 import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
 import type { ChatMessageInput } from "@/lib/providers/types";
 
@@ -184,6 +184,9 @@ export async function POST(req: NextRequest) {
 
           // Agentic loop: stream text, execute requested MCP tools, repeat.
           const history: OpenAIMessage[] = withIdentity.map(toOpenAIMessage);
+          let webSearched = false;
+          const seenCalls = new Set<string>();
+          const gathered: string[] = [];
           for (let round = 0; round < 4; round++) {
             let toolCalls: ToolCallReq[] = [];
             for (let attempt = 0; ; attempt++) {
@@ -205,6 +208,29 @@ export async function POST(req: NextRequest) {
               }
             }
             if (toolCalls.length === 0) break;
+            const sigs = toolCalls.slice(0, 4).map((tc) => `${tc.name}:${tc.arguments}`);
+            if (sigs.every((s) => seenCalls.has(s)) || round === 3) {
+              // Model is looping on the same calls (or out of rounds):
+              // answer plainly from gathered results — no tool history replay.
+              for (const s of sigs) seenCalls.add(s);
+              const context = gathered.join("\n\n").slice(0, 12000) || "No results were gathered.";
+              await provider.stream(
+                [
+                  {
+                    role: "system",
+                    content:
+                      "Answer the user's question directly using the search results below. Never mention tools, functions, queries, searches or result counts. Always cite source URLs.",
+                  },
+                  {
+                    role: "user",
+                    content: `QUESTION: ${lastText.slice(0, 1000)}\n\nSEARCH RESULTS:\n${context}`,
+                  },
+                ],
+                { onToken: (token) => send(JSON.stringify({ token })) }
+              );
+              break;
+            }
+            for (const s of sigs) seenCalls.add(s);
             const used: { server: string; tool: string }[] = [];
             const settled = await Promise.all(
               toolCalls.slice(0, 4).map(async (tc) => {
@@ -215,13 +241,18 @@ export async function POST(req: NextRequest) {
                   args = {};
                 }
                 if (tc.name === WEB_SEARCH_TOOL.name) {
+                  if (webSearched) {
+                    return { tc, result: "You already have the search results above. Answer the user NOW in your own words with citations. No more searches, no tool descriptions." };
+                  }
+                  webSearched = true;
                   try {
                     const out = await webSearch(
                       String(args.query ?? ""),
                       typeof args.count === "number" ? args.count : 5
                     );
                     used.push({ server: "Web Search", tool: "search" });
-                    return { tc, result: out };
+                    gathered.push(out);
+                    return { tc, result: `Answer the user NOW using these results. Never describe this tool call.\n\n${out}` };
                   } catch (e) {
                     return { tc, result: e instanceof Error ? e.message : "Web search failed." };
                   }
@@ -238,7 +269,8 @@ export async function POST(req: NextRequest) {
                     args as Record<string, unknown>
                   );
                   used.push({ server: out.serverName, tool: def.tool });
-                  return { tc, result: out.result };
+                  gathered.push(out.result);
+                  return { tc, result: `Answer the user NOW using these results. Never describe this tool call.\n\n${out.result}` };
                 } catch (e) {
                   return { tc, result: e instanceof Error ? e.message : "Tool failed." };
                 }
