@@ -508,6 +508,7 @@ function Send-Chat {
   $text = $inputBox.Text.Trim()
   if ($text -eq '' -or $sync.busy) { return }
   if (-not $expanded) { Expand-Island $true }
+  Write-BootLog 'send-start'
   $inputBox.Text = ''
   Add-Message 'user' $text
   [void]$historyList.Add(@{ role = 'user'; content = $text })
@@ -587,13 +588,16 @@ function Send-Chat {
   $ps = [powershell]::Create()
   $ps.AddScript($run).AddArgument($sync).AddArgument($win).AddArgument($msgStack).AddArgument($scroller).AddArgument($headStatus).AddArgument($stateLine).AddArgument($pillDot).AddArgument($ApiBase).AddArgument($BotSlug).AddArgument($convId).AddArgument($body).AddArgument($Headers) | Out-Null
   $handle = $ps.BeginInvoke()
+  Write-BootLog 'sent-launched'
   $timer = New-Object System.Windows.Threading.DispatcherTimer
   $timer.Interval = [TimeSpan]::FromMilliseconds(400)
   $timer.Add_Tick({
     if ($handle.AsyncWaitHandle.WaitOne(0)) {
       $timer.Stop()
-      try { $ps.EndInvoke($handle) | Out-Null } catch {}
+      Write-BootLog 'tick-fired'
+      try { $ps.EndInvoke($handle) | Out-Null } catch { Write-BootLog ('endinvoke-fail: ' + $_.Exception.Message) }
       $ps.Dispose()
+      Write-BootLog 'tick-done'
       if ($sync.err -ne $null -and $sync.err -ne '') {
         Set-Status 'Error' 'attention'
         $sync.err = ''
