@@ -26,6 +26,8 @@ export interface BotCompanion {
   size: number;
   always_on_top: boolean;
   hidden: boolean;
+  enabled: boolean;
+  collapsed: boolean;
 }
 
 export interface Bot {
@@ -88,13 +90,33 @@ function normalizeVoice(v: unknown): BotVoice {
 function normalizeCompanion(v: unknown): BotCompanion {
   const o = (v ?? {}) as Record<string, unknown>;
   const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : null);
-  const size = typeof o.size === "number" && o.size >= 48 && o.size <= 160 ? Math.round(o.size) : 72;
+  const size = typeof o.size === "number" && o.size >= 40 && o.size <= 160 ? Math.round(o.size) : 72;
   return {
     x: num(o.x),
     y: num(o.y),
     size,
     always_on_top: o.always_on_top !== false,
     hidden: !!o.hidden,
+    enabled: o.enabled !== false,
+    collapsed: !!o.collapsed,
+  };
+}
+
+/** Merge a companion PATCH payload over existing settings (shared by both PATCH routes). */
+export function mergeCompanionPatch(input: unknown, existing: BotCompanion): BotCompanion {
+  const c = (input ?? {}) as Record<string, unknown>;
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(c, k);
+  const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? Math.round(x) : null);
+  const size =
+    typeof c.size === "number" && c.size >= 40 && c.size <= 160 ? Math.round(c.size) : existing.size;
+  return {
+    x: has("x") ? num(c.x) : existing.x,
+    y: has("y") ? num(c.y) : existing.y,
+    size,
+    always_on_top: has("always_on_top") ? c.always_on_top !== false : existing.always_on_top,
+    hidden: has("hidden") ? !!c.hidden : existing.hidden,
+    enabled: has("enabled") ? c.enabled !== false : existing.enabled,
+    collapsed: has("collapsed") ? !!c.collapsed : existing.collapsed,
   };
 }
 

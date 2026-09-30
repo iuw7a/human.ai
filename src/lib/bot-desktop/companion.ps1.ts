@@ -1,6 +1,7 @@
-/** Builds the Human Bot Desktop companion (.ps1) for a bot.
- *  WPF floating avatar (draggable, resizable, always-on-top) + chat panel
- *  talking to Human AI via the bot's companion API key. PowerShell 5.1 safe.
+/** Builds the Human Bot Desktop companion (.ps1) — Dynamic Island style.
+ *  Top-center pill (avatar + name) that spring-expands downward into a chat
+ *  panel. PowerShell 5.1 safe. States: idle/listening/thinking/responding/
+ *  working/attention. Position persisted; autostart via companion .cmd.
  */
 
 export interface CompanionScriptInput {
@@ -21,10 +22,10 @@ function q(s: string): string {
 
 export function buildCompanionScript(c: CompanionScriptInput): string {
   const accent = /^#[0-9a-fA-F]{6}$/.test(c.accent) ? c.accent : "#e5484d";
-  const size = Math.min(160, Math.max(48, Math.round(c.size) || 72));
+  const pillH = Math.min(64, Math.max(40, Math.round(c.size * 0.72)));
   const script = `@'
 # ============================================================
-# Human Bot Desktop companion
+# Human Bot Desktop companion — Dynamic Island edition
 # Bot: ${c.slug}  Server: ${c.apiBase}
 # Run: powershell -ExecutionPolicy Bypass -File <this>.ps1
 # ============================================================
@@ -35,7 +36,11 @@ $BotSlug = ${q(c.slug)}
 $BotName = ${q(c.name)}
 $AvatarUrl = ${q(c.avatarUrl ?? "")}
 $Accent = ${q(accent)}
-$DefaultSize = ${size}
+$PillH = ${pillH}
+$PillW = 208
+$PanelW = 380
+$PanelH = 524
+$TopMargin = 8
 $DefaultTop = ${c.alwaysOnTop ? "$true" : "$false"}
 $DefaultTts = ${c.tts ? "$true" : "$false"}
 $DefaultStt = ${c.stt ? "$true" : "$false"}
@@ -53,7 +58,7 @@ if (Test-Path $StateFile) {
   try { $state = Get-Content $StateFile -Raw | ConvertFrom-Json } catch { $state = $null }
 }
 if (-not $state) {
-  $state = [pscustomobject]@{ apiKey = ''; convId = ''; x = $null; y = $null; size = $DefaultSize; top = $DefaultTop; tts = $DefaultTts; stt = $DefaultStt }
+  $state = [pscustomobject]@{ apiKey = ''; convId = ''; x = $null; size = $PillH; top = $DefaultTop; tts = $DefaultTts; stt = $DefaultStt; collapsed = $true }
 }
 function Save-State {
   $state | ConvertTo-Json | Set-Content $StateFile -Encoding UTF8
@@ -68,12 +73,10 @@ if (-not $state.apiKey) {
 }
 $Headers = @{ 'x-api-key' = $state.apiKey }
 
-# ---------- avatar image ----------
 if ($AvatarUrl -ne '' -and -not (Test-Path $AvatarFile)) {
   try { Invoke-WebRequest -Uri $AvatarUrl -OutFile $AvatarFile -TimeoutSec 20 } catch {}
 }
 
-# ---------- shared ----------
 $sync = [hashtable]::Synchronized(@{ stop = $false; busy = $false })
 $http = New-Object System.Net.Http.HttpClient
 $http.Timeout = [TimeSpan]::FromSeconds(120)
@@ -100,7 +103,6 @@ function Api-Patch($path, $body) {
   return $r.IsSuccessStatusCode
 }
 
-# ---------- TTS ----------
 $speaker = $null
 try { $speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer } catch {}
 function Speak($text) {
@@ -109,245 +111,327 @@ function Speak($text) {
   try { $speaker.SpeakAsyncCancelAll() | Out-Null; $speaker.SpeakAsync($text) | Out-Null } catch {}
 }
 
-# ---------- avatar window ----------
-[xml]$avatarXaml = @"
+# ---------- island window ----------
+[xml]$islandXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-  ShowInTaskbar="False" Width="__SIZE__" Height="__SIZE__" Title="__NAME__">
-  <Grid>
-    <Ellipse Name="Ring" Stroke="__ACCENT__" StrokeThickness="3" Margin="3" Opacity="0.9" />
-    <Ellipse Margin="8">
-      <Ellipse.Fill>
-        <ImageBrush Name="AvatarBrush" Stretch="UniformToFill" />
-      </Ellipse.Fill>
-    </Ellipse>
-    <TextBlock Name="Fallback" Foreground="White" FontWeight="Bold" FontSize="22"
-      HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
-    <Ellipse Name="Dot" Width="11" Height="11" Fill="#10b981" Margin="0,0,6,6"
-      HorizontalAlignment="Right" VerticalAlignment="Bottom" />
-    <Border Name="Grip" Width="16" Height="16" Background="#00000000"
-      HorizontalAlignment="Right" VerticalAlignment="Bottom" Cursor="SizeNWSE" />
-  </Grid>
-</Window>
-"@
-
-$avatarWin = $null
-$ring = $null
-$dot = $null
-$brush = $null
-$fallback = $null
-
-function Set-State($s) {
-  if (-not $avatarWin) { return }
-  $avatarWin.Dispatcher.Invoke([action]{
-    if ($s -eq 'listening') { $ring.Stroke = '#10b981'; $dot.Fill = '#10b981'; }
-    elseif ($s -eq 'thinking' -or $s -eq 'responding') { $ring.Stroke = $Accent; $dot.Fill = '#e5484d' }
-    elseif ($s -eq 'working') { $ring.Stroke = '#f59e0b'; $dot.Fill = '#f59e0b' }
-    elseif ($s -eq 'attention') { $ring.Stroke = '#e5484d'; $ring.StrokeThickness = 5; $dot.Fill = '#e5484d' }
-    else { $ring.Stroke = $Accent; $ring.StrokeThickness = 3; $dot.Fill = '#10b981' }
-  })
-}
-
-function Show-Avatar {
-  $r = New-Object System.Xml.XmlNodeReader $avatarXaml
-  $script:avatarWin = [Windows.Markup.XamlReader]::Load($r)
-  $script:ring = $avatarWin.FindName('Ring')
-  $script:dot = $avatarWin.FindName('Dot')
-  $script:brush = $avatarWin.FindName('AvatarBrush')
-  $script:fallback = $avatarWin.FindName('Fallback')
-  if ((Test-Path $AvatarFile)) {
-    try {
-      $img = New-Object System.Windows.Media.Imaging.BitmapImage
-      $img.BeginInit(); $img.UriSource = $AvatarFile; $img.CacheOption = 'OnLoad'; $img.EndInit()
-      $brush.ImageSource = $img
-    } catch { $fallback.Text = $BotName.Substring(0, 1).ToUpper(); $fallback.Visibility = 'Visible' }
-  } else {
-    $fallback.Text = $BotName.Substring(0, 1).ToUpper(); $fallback.Visibility = 'Visible'
-  }
-  $sz = $state.size
-  if (-not $sz) { $sz = $DefaultSize }
-  $avatarWin.Width = $sz; $avatarWin.Height = $sz
-  if ($state.x -ne $null -and $state.y -ne $null) {
-    $avatarWin.Left = $state.x; $avatarWin.Top = $state.y
-  } else {
-    $sw = [System.Windows.SystemParameters]::PrimaryScreenWidth
-    $sh = [System.Windows.SystemParameters]::PrimaryScreenHeight
-    $avatarWin.Left = $sw - $sz - 32; $avatarWin.Top = $sh - $sz - 90
-  }
-  $avatarWin.Topmost = [bool]$state.top
-
-  # drag avatar
-  $drag = @{ on = $false; sx = 0; sy = 0; lx = 0; ly = 0; moved = $false }
-  $avatarWin.Add_MouseLeftButtonDown({
-    $drag.on = $true; $drag.moved = $false
-    $p = [System.Windows.Input.Mouse]::GetPosition($avatarWin)
-    $drag.sx = $p.X; $drag.sy = $p.Y; $drag.lx = $avatarWin.Left; $drag.ly = $avatarWin.Top
-    $avatarWin.CaptureMouse() | Out-Null
-  })
-  $avatarWin.Add_MouseMove({
-    if ($drag.on) {
-      $p = [System.Windows.Input.Mouse]::GetPosition($avatarWin)
-      $dx = $p.X - $drag.sx; $dy = $p.Y - $drag.sy
-      if ([Math]::Abs($dx) + [Math]::Abs($dy) -gt 4) { $drag.moved = $true }
-      if ($drag.moved) { $avatarWin.Left = $drag.lx + $dx; $avatarWin.Top = $drag.ly + $dy }
-    }
-  })
-  $avatarWin.Add_MouseLeftButtonUp({
-    $wasDrag = $drag.moved
-    $drag.on = $false
-    try { $avatarWin.ReleaseMouseCapture() | Out-Null } catch {}
-    if ($wasDrag) {
-      $state.x = [int]$avatarWin.Left; $state.y = [int]$avatarWin.Top; Save-State
-      Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ x = $state.x; y = $state.y; size = $state.size } | Out-Null
-    } else {
-      Toggle-Chat
-    }
-  })
-
-  # resize grip
-  $rsz = @{ on = $false; sx = 0; cur = 0 }
-  $grip = $avatarWin.FindName('Grip')
-  $grip.Add_MouseLeftButtonDown({
-    $rsz.on = $true
-    $p = [System.Windows.Input.Mouse]::GetPosition($avatarWin)
-    $rsz.sx = $p.X; $rsz.cur = $avatarWin.Width
-    $grip.CaptureMouse() | Out-Null
-  })
-  $grip.Add_MouseMove({
-    if ($rsz.on) {
-      $p = [System.Windows.Input.Mouse]::GetPosition($avatarWin)
-      $nw = [int]($rsz.cur + ($p.X - $rsz.sx))
-      if ($nw -lt 48) { $nw = 48 }
-      if ($nw -gt 160) { $nw = 160 }
-      $avatarWin.Width = $nw; $avatarWin.Height = $nw
-    }
-  })
-  $grip.Add_MouseLeftButtonUp({
-    $rsz.on = $false
-    try { $grip.ReleaseMouseCapture() | Out-Null } catch {}
-    $state.size = [int]$avatarWin.Width; Save-State
-    Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ x = [int]$avatarWin.Left; y = [int]$avatarWin.Top; size = $state.size } | Out-Null
-    Position-Chat
-  })
-
-  # right-click menu
-  $avatarWin.Add_MouseRightButtonUp({
-    $pinLabel = 'Pin above windows'
-    if ($avatarWin.Topmost) { $pinLabel = 'Unpin (allow behind windows)' }
-    $menu = New-Object System.Windows.Controls.ContextMenu
-    $items = @(
-      @{ h = 'Chat'; a = { Toggle-Chat } },
-      @{ h = 'Open full page'; a = { Start-Process ($ApiBase + '/bot/' + $BotSlug) } },
-      @{ h = $pinLabel; a = { $avatarWin.Topmost = -not $avatarWin.Topmost; $state.top = [bool]$avatarWin.Topmost; Save-State } },
-      @{ h = 'Hide companion'; a = { Hide-Companion } },
-      @{ h = 'Quit'; a = { [System.Windows.Application]::Current.Shutdown() } }
-    )
-    foreach ($it in $items) {
-      $mi = New-Object System.Windows.Controls.MenuItem
-      $mi.Header = $it.h
-      $mi.Add_Click($it.a)
-      $menu.Items.Add($mi) | Out-Null
-    }
-    $menu.PlacementTarget = $avatarWin
-    $menu.IsOpen = $true
-  })
-  $avatarWin.Show()
-}
-
-function Hide-Companion {
-  if ($chatWin) { $chatWin.Hide() }
-  $avatarWin.Width = 18; $avatarWin.Height = 18
-  $avatarWin.Opacity = 0.55
-  Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ hidden = $true } | Out-Null
-}
-function Restore-Companion {
-  $avatarWin.Opacity = 1
-  $sz = $state.size
-  if (-not $sz) { $sz = $DefaultSize }
-  $avatarWin.Width = $sz; $avatarWin.Height = $sz
-  Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ hidden = $false } | Out-Null
-}
-
-# ---------- chat window ----------
-[xml]$chatXaml = @"
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-  WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-  ShowInTaskbar="False" Width="340" Height="470" Title="__NAME__ chat">
-  <Border Background="#0B0B0DF2" BorderBrush="#26262c" BorderThickness="1" CornerRadius="16" Padding="0">
-    <Grid>
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="*" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
-      <Border Grid.Row="0" Background="#00000000" Padding="12,10" Name="HeadDrag">
-        <DockPanel>
-          <Ellipse Width="26" Height="26" DockPanel.Dock="Left" Margin="0,0,8,0">
-            <Ellipse.Fill><ImageBrush Name="HeadAvatar" Stretch="UniformToFill" /></Ellipse.Fill>
-          </Ellipse>
-          <StackPanel VerticalAlignment="Center">
-            <TextBlock Name="HeadName" Foreground="White" FontWeight="SemiBold" FontSize="13" />
-            <TextBlock Name="HeadStatus" Foreground="#71717a" FontSize="11" Text="Idle" />
-          </StackPanel>
-          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Name="BtnPage" Content="&#x2197;" ToolTip="Open full page" Background="Transparent" Foreground="#a1a1aa" BorderThickness="0" FontSize="13" Padding="6,2" Cursor="Hand" />
-            <Button Name="BtnHide" Content="&#x2013;" ToolTip="Hide" Background="Transparent" Foreground="#a1a1aa" BorderThickness="0" FontSize="14" Padding="6,2" Cursor="Hand" />
-          </StackPanel>
-        </DockPanel>
-      </Border>
-      <ScrollViewer Grid.Row="1" Margin="10,0" Name="Scroller" VerticalScrollBarVisibility="Auto">
-        <StackPanel Name="Messages" />
-      </ScrollViewer>
-      <TextBlock Grid.Row="2" Name="StateLine" Foreground="#71717a" FontSize="11" Margin="12,2" Text="" Visibility="Collapsed" />
-      <Grid Grid.Row="3" Margin="10,6,10,10">
+  ShowInTaskbar="False" Title="__NAME__">
+  <Border Name="Island" CornerRadius="24" Background="#0B0B0DF2"
+    BorderBrush="#2A2A30" BorderThickness="1">
+    <Border.Effect>
+      <DropShadowEffect Color="Black" Opacity="0.55" ShadowDepth="6" BlurRadius="22" />
+    </Border.Effect>
+    <DockPanel LastChildFill="True">
+      <Grid Name="PillRow" DockPanel.Dock="Top" Height="__PILLH__" Background="Transparent">
         <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <TextBox Name="Input" Grid.Column="0" Background="#131316" Foreground="White"
-          BorderBrush="#26262c" BorderThickness="1" Padding="8,7" FontSize="13"
-          VerticalContentAlignment="Center">
-          <TextBox.Resources>
-            <Style TargetType="Border"><Setter Property="CornerRadius" Value="10" /></Style>
-          </TextBox.Resources>
-        </TextBox>
-        <Button Name="BtnMic" Grid.Column="1" Content="Mic" ToolTip="Voice input" Margin="6,0,0,0" FontSize="11"
-          Background="#131316" Foreground="White" BorderBrush="#26262c" Width="40" Cursor="Hand">
-          <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="10" /></Style></Button.Resources>
-        </Button>
-        <Button Name="BtnSpeak" Grid.Column="2" Content="Read" ToolTip="Read aloud" Margin="6,0,0,0" FontSize="11"
-          Background="#131316" Foreground="White" BorderBrush="#26262c" Width="40" Cursor="Hand">
-          <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="10" /></Style></Button.Resources>
-        </Button>
-        <Button Name="BtnSend" Grid.Column="3" Content="&#x27A4;" Margin="6,0,0,0" Width="38"
-          Background="#e5484d" Foreground="White" BorderThickness="0" FontWeight="Bold" Cursor="Hand">
-          <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="10" /></Style></Button.Resources>
-        </Button>
+        <Grid Grid.Column="0" Name="AvatarWrap" Margin="9,0,0,0" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <Ellipse Name="AvatarRing" Stroke="__ACCENT__" StrokeThickness="2" />
+          <Ellipse Name="AvatarFace" Margin="3">
+            <Ellipse.Fill><ImageBrush Name="AvatarBrush" Stretch="UniformToFill" /></Ellipse.Fill>
+          </Ellipse>
+          <TextBlock Name="AvatarFallback" Foreground="White" FontWeight="Bold"
+            HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+        </Grid>
+        <TextBlock Grid.Column="1" Name="PillName" Foreground="White" FontWeight="SemiBold" FontSize="13"
+          Margin="9,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <Ellipse Grid.Column="2" Name="PillDot" Width="8" Height="8" Fill="#10b981" Margin="8,0,2,0" />
+        <TextBlock Grid.Column="3" Name="Chevron" Foreground="#71717a" FontSize="12" Text="v"
+          Margin="0,0,12,0" VerticalAlignment="Center" />
       </Grid>
-    </Grid>
+      <Grid Name="ChatArea" Visibility="Collapsed" Opacity="0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Border Grid.Row="0" Background="#00000000" Padding="14,6,14,8" Name="HeadDrag">
+          <DockPanel>
+            <StackPanel VerticalAlignment="Center">
+              <TextBlock Name="HeadStatus" Foreground="#a1a1aa" FontSize="11" Text="Idle" />
+            </StackPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+              <Button Name="BtnPin" Content="Pin" ToolTip="Stay above windows" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="11" Padding="6,2" Cursor="Hand" />
+              <Button Name="BtnPage" Content="Open" ToolTip="Open full page" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="11" Padding="6,2" Cursor="Hand" />
+              <Button Name="BtnX" Content="X" ToolTip="Collapse (Esc)" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="12" Padding="8,2" Cursor="Hand" />
+            </StackPanel>
+          </DockPanel>
+        </Border>
+        <ScrollViewer Grid.Row="1" Margin="12,0" Name="Scroller" VerticalScrollBarVisibility="Auto">
+          <StackPanel Name="Messages" />
+        </ScrollViewer>
+        <TextBlock Grid.Row="2" Name="StateLine" Foreground="#71717a" FontSize="11" Margin="14,2" Text="" Visibility="Collapsed" />
+        <Grid Grid.Row="3" Margin="12,6,12,12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBox Name="Input" Grid.Column="0" Background="#131316" Foreground="White"
+            BorderBrush="#26262c" BorderThickness="1" Padding="9,8" FontSize="13"
+            VerticalContentAlignment="Center">
+            <TextBox.Resources>
+              <Style TargetType="Border"><Setter Property="CornerRadius" Value="12" /></Style>
+            </TextBox.Resources>
+          </TextBox>
+          <Button Name="BtnMic" Grid.Column="1" Content="Mic" ToolTip="Voice input" Margin="6,0,0,0" FontSize="11"
+            Background="#131316" Foreground="White" BorderBrush="#26262c" Width="42" Cursor="Hand">
+            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="12" /></Style></Button.Resources>
+          </Button>
+          <Button Name="BtnSpeak" Grid.Column="2" Content="Read" ToolTip="Read aloud" Margin="6,0,0,0" FontSize="11"
+            Background="#131316" Foreground="White" BorderBrush="#26262c" Width="42" Cursor="Hand">
+            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="12" /></Style></Button.Resources>
+          </Button>
+          <Button Name="BtnSend" Grid.Column="3" Content="Send" Margin="6,0,0,0" FontSize="12" FontWeight="SemiBold"
+            Background="#e5484d" Foreground="White" BorderThickness="0" Padding="12,0" Cursor="Hand">
+            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="12" /></Style></Button.Resources>
+          </Button>
+        </Grid>
+      </Grid>
+    </DockPanel>
   </Border>
 </Window>
 "@
 
-$chatWin = $null
+$win = $null
+$island = $null
+$pillRow = $null
+$avatarWrap = $null
+$avatarRing = $null
+$avatarFace = $null
+$avatarBrush = $null
+$avatarFallback = $null
+$pillName = $null
+$pillDot = $null
+$chevron = $null
+$chatArea = $null
+$headStatus = $null
 $msgStack = $null
 $scroller = $null
-$inputBox = $null
-$headStatus = $null
 $stateLine = $null
+$inputBox = $null
 $convId = ''
+$expanded = $false
+$miniHidden = $false
+$pillCurH = 0
 $historyList = New-Object System.Collections.ArrayList
 
+function Screen-CenterX {
+  return ([System.Windows.SystemParameters]::PrimaryScreenWidth / 2) + $state.x
+}
+function Place-Island($w, $h) {
+  $cx = Screen-CenterX
+  if (-not $cx) { $cx = [System.Windows.SystemParameters]::PrimaryScreenWidth / 2 }
+  $win.Width = $w
+  $win.Height = $h
+  $win.Left = $cx - ($w / 2)
+  $win.Top = $TopMargin
+}
+
+function Ease-OutCubic($t) { return 1 - [Math]::Pow(1 - $t, 3) }
+function Ease-InCubic($t) { return [Math]::Pow($t, 3) }
+function Ease-OutBack($t) {
+  $c = 1.4
+  $u = $t - 1
+  return 1 + ($c + 1) * $u * $u * $u + $c * $u * $u
+}
+
+$anim = @{ active = $false; t0 = $null; dur = 240; fromW = 0; fromH = 0; toW = 0; toH = 0; ease = 'out'; onDone = $null }
+$animTimer = New-Object System.Windows.Threading.DispatcherTimer
+$animTimer.Interval = [TimeSpan]::FromMilliseconds(15)
+$animTimer.Add_Tick({
+  if (-not $anim.active) { return }
+  $el = ([DateTime]::UtcNow - $anim.t0).TotalMilliseconds
+  $t = $el / $anim.dur
+  if ($t -ge 1) { $t = 1 }
+  if ($anim.ease -eq 'back') { $e = Ease-OutBack $t }
+  elseif ($anim.ease -eq 'in') { $e = Ease-InCubic $t }
+  else { $e = Ease-OutCubic $t }
+  $w = $anim.fromW + ($anim.toW - $anim.fromW) * $e
+  $h = $anim.fromH + ($anim.toH - $anim.fromH) * $e
+  if ($w -lt 20) { $w = 20 }
+  if ($h -lt 20) { $h = 20 }
+  Place-Island $w $h
+  if ($expanded) {
+    $op = $t
+    if ($op -gt 1) { $op = 1 }
+    $chatArea.Opacity = $op
+  }
+  if ($t -ge 1) {
+    $anim.active = $false
+    $animTimer.Stop()
+    $cb = $anim.onDone
+    $anim.onDone = $null
+    if ($cb) { & $cb }
+  }
+})
+
+function Start-Anim($toW, $toH, $dur, $ease, $onDone) {
+  $anim.fromW = $win.Width
+  $anim.fromH = $win.Height
+  $anim.toW = $toW
+  $anim.toH = $toH
+  $anim.dur = $dur
+  $anim.ease = $ease
+  $anim.onDone = $onDone
+  $anim.t0 = [DateTime]::UtcNow
+  $anim.active = $true
+  $animTimer.Start()
+}
+
+function Set-Dot($color) {
+  $win.Dispatcher.Invoke([action]{ $pillDot.Fill = $color })
+}
+
+function Set-Status($text, $botState) {
+  $win.Dispatcher.Invoke([action]{
+    $headStatus.Text = $text
+    if ($text -eq '') {
+      $stateLine.Visibility = 'Collapsed'
+    } else {
+      $stateLine.Visibility = 'Visible'
+      $stateLine.Text = $text
+    }
+    if ($botState -eq 'listening') { $pillDot.Fill = '#10b981' }
+    elseif ($botState -eq 'thinking' -or $botState -eq 'responding') { $pillDot.Fill = '#e5484d' }
+    elseif ($botState -eq 'working') { $pillDot.Fill = '#f59e0b' }
+    elseif ($botState -eq 'attention') { $pillDot.Fill = '#e5484d' }
+    else { $pillDot.Fill = '#10b981' }
+  })
+  if ($botState -eq 'thinking' -or $botState -eq 'responding' -or $botState -eq 'working') {
+    Start-AvatarPulse
+  } else {
+    Stop-AvatarPulse
+  }
+  if ($botState -eq 'thinking') { Start-Dots } else { Stop-Dots }
+}
+
+$pulseTimer = New-Object System.Windows.Threading.DispatcherTimer
+$pulseTimer.Interval = [TimeSpan]::FromMilliseconds(90)
+$pulseOn = $false
+$pulseTimer.Add_Tick({
+  $pulseOn = -not $pulseOn
+  if ($pulseOn) { $avatarWrap.Opacity = 0.55 } else { $avatarWrap.Opacity = 1.0 }
+})
+function Start-AvatarPulse { $pulseTimer.Start() }
+function Stop-AvatarPulse { $pulseTimer.Stop(); $avatarWrap.Opacity = 1.0 }
+
+$dotsTimer = New-Object System.Windows.Threading.DispatcherTimer
+$dotsTimer.Interval = [TimeSpan]::FromMilliseconds(380)
+$dotsN = 0
+$dotsTimer.Add_Tick({
+  $dotsN = ($dotsN + 1) % 4
+  $d = ''
+  for ($i = 0; $i -lt $dotsN; $i++) { $d += '.' }
+  $headStatus.Text = 'Thinking' + $d
+  $stateLine.Text = 'Thinking' + $d
+})
+function Start-Dots { $dotsN = 0; $dotsTimer.Start() }
+function Stop-Dots { $dotsTimer.Stop() }
+
+$attnTimer = New-Object System.Windows.Threading.DispatcherTimer
+$attnTimer.Interval = [TimeSpan]::FromMilliseconds(16)
+$attnT0 = $null
+$attnBaseW = 0
+$attnTimer.Add_Tick({
+  $el = ([DateTime]::UtcNow - $attnT0).TotalMilliseconds
+  if ($el -ge 1200) { $attnTimer.Stop(); Place-Island $attnBaseW $attnBaseH; return }
+  $pulse = [Math]::Sin($el / 1200 * 3.14159 * 4) * 9
+  Place-Island ($attnBaseW + $pulse) $attnBaseH
+})
+function Notify-Attention {
+  if ($expanded) { return }
+  Set-Status 'New message — click to read' 'attention'
+  $attnBaseW = $PillW
+  $attnBaseH = $win.Height
+  $attnT0 = [DateTime]::UtcNow
+  $attnTimer.Start()
+}
+
+function Expand-Island($instant) {
+  if ($expanded) { return }
+  if ($script:miniHidden) { Restore-Island }
+  $script:expanded = $true
+  $chevron.Text = '^'
+  $chatArea.Visibility = 'Visible'
+  $chatArea.Opacity = 0
+  if ($instant) {
+    Place-Island $PanelW $PanelH
+    $chatArea.Opacity = 1
+  } else {
+    Start-Anim $PanelW $PanelH 260 'back' $null
+  }
+  $state.collapsed = $false
+  Save-State
+  Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ collapsed = $false } | Out-Null
+  Ensure-Conversation
+  $inputBox.Focus() | Out-Null
+}
+
+function Collapse-Island {
+  if (-not $expanded) { return }
+  $script:expanded = $false
+  $chevron.Text = 'v'
+  $ph = $pillCurH
+  if (-not $ph) { $ph = $PillH }
+  Start-Anim $PillW $ph 200 'in' {
+    $chatArea.Visibility = 'Collapsed'
+    $chatArea.Opacity = 0
+    Set-Status 'Idle' 'idle'
+  }
+  $state.collapsed = $true
+  Save-State
+  Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ collapsed = $true } | Out-Null
+}
+
+function Toggle-Island {
+  if ($script:miniHidden) { Restore-Island; return }
+  if ($expanded) { Collapse-Island } else { Expand-Island $false }
+}
+
+function Apply-IslandSize($ph) {
+  if (-not $ph) { $ph = $PillH }
+  $script:pillCurH = $ph
+  $pillRow.Height = $ph
+  $avatarWrap.Width = $ph - 16
+  $avatarWrap.Height = $ph - 16
+  $avatarFace.Width = $ph - 16
+  $avatarFace.Height = $ph - 16
+  $avatarFallback.FontSize = [int](($ph - 16) * 0.4)
+}
+
+function Hide-Island {
+  $script:miniHidden = $true
+  $anim.active = $false
+  $animTimer.Stop()
+  Place-Island 22 22
+  $chatArea.Visibility = 'Collapsed'
+  $island.CornerRadius = 11
+  Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ hidden = $true } | Out-Null
+}
+function Restore-Island {
+  $script:miniHidden = $false
+  $island.CornerRadius = 24
+  $ph = $state.size
+  if (-not $ph) { $ph = $PillH }
+  Apply-IslandSize $ph
+  Place-Island $PillW $ph
+  Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ hidden = $false } | Out-Null
+}
+
 function Add-Message($role, $text) {
-  $chatWin.Dispatcher.Invoke([action]{
+  $win.Dispatcher.Invoke([action]{
     $b = New-Object System.Windows.Controls.Border
-    $b.CornerRadius = '12,12,4,12'
+    if ($role -eq 'user') { $b.CornerRadius = '12,12,4,12' } else { $b.CornerRadius = '12,12,12,4' }
     $b.Padding = '10,7'
     $b.Margin = '0,0,0,8'
-    $b.MaxWidth = 270
+    $b.MaxWidth = 300
     if ($role -eq 'user') {
       $b.Background = '#26262c'
       $b.HorizontalAlignment = 'Right'
@@ -368,75 +452,8 @@ function Add-Message($role, $text) {
   })
 }
 
-function Set-ChatStatus($text, $botState) {
-  if ($chatWin) {
-    $chatWin.Dispatcher.Invoke([action]{
-      $headStatus.Text = $text
-      if ($text -eq '') { $stateLine.Visibility = 'Collapsed' }
-      else { $stateLine.Visibility = 'Visible'; $stateLine.Text = $text }
-    })
-  }
-  Set-State $botState
-}
-
-function Position-Chat {
-  if (-not $chatWin -or -not $avatarWin) { return }
-  $chatWin.Left = $avatarWin.Left + $avatarWin.Width - 340
-  if ($chatWin.Left -lt 8) { $chatWin.Left = 8 }
-  $chatWin.Top = $avatarWin.Top - 478
-  if ($chatWin.Top -lt 8) { $chatWin.Top = $avatarWin.Top + $avatarWin.Height + 8 }
-}
-
-function Toggle-Chat {
-  if ($avatarWin.Width -lt 30) { Restore-Companion }
-  if ($chatWin -and $chatWin.IsVisible) { $chatWin.Hide(); return }
-  Show-Chat
-}
-
-function Show-Chat {
-  if (-not $chatWin) { Build-Chat }
-  Position-Chat
-  $chatWin.Topmost = [bool]$state.top
-  $chatWin.Show()
-  $chatWin.Activate() | Out-Null
-  if ($chatWin.Visibility -eq 'Visible') { Set-State 'idle' }
-  $inputBox.Focus() | Out-Null
-}
-
-function Build-Chat {
-  $r = New-Object System.Xml.XmlNodeReader $chatXaml
-  $script:chatWin = [Windows.Markup.XamlReader]::Load($r)
-  $script:msgStack = $chatWin.FindName('Messages')
-  $script:scroller = $chatWin.FindName('Scroller')
-  $script:inputBox = $chatWin.FindName('Input')
-  $script:headStatus = $chatWin.FindName('HeadStatus')
-  $script:stateLine = $chatWin.FindName('StateLine')
-  $chatWin.FindName('HeadName').Text = $BotName
-  if ((Test-Path $AvatarFile)) {
-    try {
-      $img = New-Object System.Windows.Media.Imaging.BitmapImage
-      $img.BeginInit(); $img.UriSource = $AvatarFile; $img.CacheOption = 'OnLoad'; $img.EndInit()
-      $chatWin.FindName('HeadAvatar').ImageSource = $img
-    } catch {}
-  }
-  $dragH = $chatWin.FindName('HeadDrag')
-  $dragH.Add_MouseLeftButtonDown({ $chatWin.DragMove() })
-  $chatWin.FindName('BtnPage').Add_Click({ Start-Process ($ApiBase + '/bot/' + $BotSlug) })
-  $chatWin.FindName('BtnHide').Add_Click({ $chatWin.Hide() })
-  $chatWin.FindName('BtnSend').Add_Click({ Send-Chat })
-  $chatWin.FindName('BtnMic').Add_Click({ Start-Listen })
-  $spk = $chatWin.FindName('BtnSpeak')
-  $spk.Opacity = if ($state.tts) { 1.0 } else { 0.45 }
-  $spk.Add_Click({
-    $state.tts = -not $state.tts; Save-State
-    $spk.Opacity = if ($state.tts) { 1.0 } else { 0.45 }
-    if (-not $state.tts -and $speaker) { try { $speaker.SpeakAsyncCancelAll() | Out-Null } catch {} }
-  })
-  $inputBox.Add_KeyDown({
-    param($s, $e)
-    if ($e.Key -eq 'Enter') { Send-Chat }
-  })
-  # conversation: reuse stored or create
+function Ensure-Conversation {
+  if ($convId -ne '') { return }
   if ($state.convId -ne '' -and $state.convId -ne $null) {
     $script:convId = $state.convId
     $h = Api-Get ('/api/bots/' + $BotSlug + '/conversations/' + $convId)
@@ -445,35 +462,35 @@ function Build-Chat {
         [void]$historyList.Add(@{ role = [string]$m.role; content = [string]$m.content })
         Add-Message $m.role $m.content
       }
-    } else {
-      $script:convId = ''
+      return
     }
+    $script:convId = ''
   }
-  if ($convId -eq '') {
-    $c = Api-Post ('/api/bots/' + $BotSlug + '/conversations') @{}
-    if ($c -and $c.id) {
-      $script:convId = [string]$c.id
-      $state.convId = $script:convId; Save-State
-    }
+  $c = Api-Post ('/api/bots/' + $BotSlug + '/conversations') @{}
+  if ($c -and $c.id) {
+    $script:convId = [string]$c.id
+    $state.convId = $script:convId
+    Save-State
   }
 }
 
 function Send-Chat {
   $text = $inputBox.Text.Trim()
   if ($text -eq '' -or $sync.busy) { return }
+  if (-not $expanded) { Expand-Island $true }
   $inputBox.Text = ''
   Add-Message 'user' $text
   [void]$historyList.Add(@{ role = 'user'; content = $text })
   $sync.stop = $false
   $sync.busy = $true
-  Set-ChatStatus 'Thinking…' 'thinking'
+  Set-Status 'Thinking' 'thinking'
   $msgs = @()
   foreach ($m in ($historyList | Select-Object -Last 20)) {
     $msgs += @{ role = $m.role; content = $m.content }
   }
   $body = @{ conversation_id = $convId; messages = $msgs } | ConvertTo-Json -Depth 6
   $run = {
-    param($sync, $chatWin, $msgStack, $scroller, $headStatus, $stateLine, $ApiBase, $BotSlug, $convId, $body, $Headers)
+    param($sync, $win, $msgStack, $scroller, $headStatus, $stateLine, $pillDot, $ApiBase, $BotSlug, $convId, $body, $Headers)
     try {
       $client = New-Object System.Net.Http.HttpClient
       $client.Timeout = [TimeSpan]::FromSeconds(150)
@@ -483,22 +500,20 @@ function Send-Chat {
       $req.Content = $ct
       $resp = $client.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
       if (-not $resp.IsSuccessStatusCode) {
-        $err = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-        $chatWin.Dispatcher.Invoke([action]{ $headStatus.Text = 'Error ' + [int]$resp.StatusCode })
+        $win.Dispatcher.Invoke([action]{ $headStatus.Text = 'Error ' + [int]$resp.StatusCode })
+        $sync.err = 'Error ' + [int]$resp.StatusCode
         return
       }
       $stream = $resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
       $reader = New-Object System.IO.StreamReader($stream)
       $full = ''
-      $bubble = $null
-      $tb = $null
-      $chatWin.Dispatcher.Invoke([action]{
-        $headStatus.Text = 'Responding…'
+      $win.Dispatcher.Invoke([action]{
+        $headStatus.Text = 'Responding'
         $b = New-Object System.Windows.Controls.Border
         $b.CornerRadius = '12,12,12,4'
         $b.Padding = '10,7'
         $b.Margin = '0,0,0,8'
-        $b.MaxWidth = 270
+        $b.MaxWidth = 300
         $b.Background = '#131316'
         $b.BorderBrush = '#26262c'
         $b.BorderThickness = '1'
@@ -510,7 +525,6 @@ function Send-Chat {
         $b.Child = $t
         $msgStack.Children.Add($b) | Out-Null
         $scroller.ScrollToBottom()
-        $sync.bubble = $b
         $sync.tb = $t
       })
       while (-not $reader.EndOfStream) {
@@ -521,13 +535,13 @@ function Send-Chat {
         if ($data -eq '[DONE]') { continue }
         try { $j = $data | ConvertFrom-Json } catch { continue }
         if ($j.error) {
-          $chatWin.Dispatcher.Invoke([action]{ $headStatus.Text = 'Error' })
+          $win.Dispatcher.Invoke([action]{ $headStatus.Text = 'Error' })
           $sync.err = [string]$j.error
           break
         }
         if ($j.token) {
           $full += $j.token
-          $chatWin.Dispatcher.Invoke([action]{
+          $win.Dispatcher.Invoke([action]{
             $sync.tb.Text = $full
             $scroller.ScrollToBottom()
           })
@@ -541,7 +555,7 @@ function Send-Chat {
     }
   }
   $ps = [powershell]::Create()
-  $ps.AddScript($run).AddArgument($sync).AddArgument($chatWin).AddArgument($msgStack).AddArgument($scroller).AddArgument($headStatus).AddArgument($stateLine).AddArgument($ApiBase).AddArgument($BotSlug).AddArgument($convId).AddArgument($body).AddArgument($Headers) | Out-Null
+  $ps.AddScript($run).AddArgument($sync).AddArgument($win).AddArgument($msgStack).AddArgument($scroller).AddArgument($headStatus).AddArgument($stateLine).AddArgument($pillDot).AddArgument($ApiBase).AddArgument($BotSlug).AddArgument($convId).AddArgument($body).AddArgument($Headers) | Out-Null
   $handle = $ps.BeginInvoke()
   $timer = New-Object System.Windows.Threading.DispatcherTimer
   $timer.Interval = [TimeSpan]::FromMilliseconds(400)
@@ -551,17 +565,12 @@ function Send-Chat {
       try { $ps.EndInvoke($handle) | Out-Null } catch {}
       $ps.Dispose()
       if ($sync.err -ne $null -and $sync.err -ne '') {
-        Add-Message 'user' ('Error: ' + $sync.err)
+        Set-Status 'Error' 'attention'
         $sync.err = ''
-        Set-ChatStatus 'Error' 'attention'
       } else {
         [void]$historyList.Add(@{ role = 'assistant'; content = [string]$sync.full })
-        if ($chatWin.IsVisible) {
-          Set-ChatStatus '' 'idle'
-        } else {
-          Set-ChatStatus 'New message — click to read' 'attention'
-          try { Speak ([string]$sync.full) } catch {}
-        }
+        Set-Status 'Idle' 'idle'
+        try { Speak ([string]$sync.full) } catch {}
       }
     }
   })
@@ -570,10 +579,10 @@ function Send-Chat {
 
 function Start-Listen {
   if (-not $state.stt) {
-    Set-ChatStatus 'Enable voice input in Bot settings first' 'attention'
+    Set-Status 'Enable voice input in Bot settings first' 'attention'
     return
   }
-  Set-ChatStatus 'Listening…' 'listening'
+  Set-Status 'Listening' 'listening'
   $run = {
     param($sync)
     try {
@@ -601,25 +610,209 @@ function Start-Listen {
       $heard = [string]$sync.heard
       $sync.heard = ''
       if ($heard -eq '__unavailable__') {
-        Set-ChatStatus 'Voice input unavailable on this PC' 'attention'
+        Set-Status 'Voice input unavailable on this PC' 'attention'
       } elseif ($heard -ne '') {
         $inputBox.Text = $heard
-        Set-ChatStatus '' 'idle'
+        Set-Status 'Idle' 'idle'
         Send-Chat
       } else {
-        Set-ChatStatus '' 'idle'
+        Set-Status 'Idle' 'idle'
       }
     }
   })
   $timer.Start()
 }
 
+function Build-Island {
+  $r = New-Object System.Xml.XmlNodeReader $islandXaml
+  $script:win = [Windows.Markup.XamlReader]::Load($r)
+  $script:island = $win.FindName('Island')
+  $script:island = $win.FindName('Island')
+  $script:pillRow = $win.FindName('PillRow')
+  $script:avatarWrap = $win.FindName('AvatarWrap')
+  $script:avatarRing = $win.FindName('AvatarRing')
+  $script:avatarFace = $win.FindName('AvatarFace')
+  $script:avatarBrush = $win.FindName('AvatarBrush')
+  $script:avatarFallback = $win.FindName('AvatarFallback')
+  $script:pillName = $win.FindName('PillName')
+  $script:pillDot = $win.FindName('PillDot')
+  $script:chevron = $win.FindName('Chevron')
+  $script:chatArea = $win.FindName('ChatArea')
+  $script:headStatus = $win.FindName('HeadStatus')
+  $script:msgStack = $win.FindName('Messages')
+  $script:scroller = $win.FindName('Scroller')
+  $script:stateLine = $win.FindName('StateLine')
+  $script:inputBox = $win.FindName('Input')
+  $pillName.Text = $BotName
+  $ph0 = $state.size
+  if (-not $ph0) { $ph0 = $PillH }
+  Apply-IslandSize $ph0
+  if ((Test-Path $AvatarFile)) {
+    try {
+      $img = New-Object System.Windows.Media.Imaging.BitmapImage
+      $img.BeginInit(); $img.UriSource = $AvatarFile; $img.CacheOption = 'OnLoad'; $img.EndInit()
+      $avatarBrush.ImageSource = $img
+    } catch {
+      $avatarFallback.Text = $BotName.Substring(0, 1).ToUpper()
+      $avatarFallback.Visibility = 'Visible'
+    }
+  } else {
+    $avatarFallback.Text = $BotName.Substring(0, 1).ToUpper()
+    $avatarFallback.Visibility = 'Visible'
+  }
+  $win.Topmost = [bool]$state.top
+  $win.Add_KeyDown({
+    param($s, $e)
+    if ($e.Key -eq 'Escape') { Collapse-Island }
+  })
+
+  # click pill toggles
+  $pillRow.Add_MouseLeftButtonDown({
+    $script:pressX = [System.Windows.Input.Mouse]::GetPosition($win).X
+    $script:pressMoved = $false
+    $pillRow.CaptureMouse() | Out-Null
+  })
+  $pillRow.Add_MouseMove({
+    if ($pressX -eq $null) { return }
+    $p = [System.Windows.Input.Mouse]::GetPosition($win)
+    $dx = $p.X - $pressX
+    if ([Math]::Abs($dx) -gt 5) { $pressMoved = $true }
+    if ($pressMoved -and -not $expanded) {
+      $cx = Screen-CenterX
+      if (-not $cx) { $cx = [System.Windows.SystemParameters]::PrimaryScreenWidth / 2 }
+      $sw = [System.Windows.SystemParameters]::PrimaryScreenWidth
+      $newCx = $cx + $dx
+      $half = $win.Width / 2
+      if ($newCx -lt ($half + 8)) { $newCx = $half + 8 }
+      if ($newCx -gt ($sw - $half - 8)) { $newCx = $sw - $half - 8 }
+      $win.Left = $newCx - $half
+    }
+  })
+  $pillRow.Add_MouseLeftButtonUp({
+    try { $pillRow.ReleaseMouseCapture() | Out-Null } catch {}
+    if ($pressMoved) {
+      $state.x = [int]($win.Left + ($win.Width / 2) - ([System.Windows.SystemParameters]::PrimaryScreenWidth / 2))
+      Save-State
+      Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ x = $state.x } | Out-Null
+    } else {
+      Toggle-Island
+    }
+    $script:pressX = $null
+    $script:pressMoved = $false
+  })
+
+  # header drag moves island horizontally too
+  $head = $win.FindName('HeadDrag')
+  if ($head) {
+    $head.Add_MouseLeftButtonDown({ $win.DragMove() })
+  }
+
+  # right-click menu
+  $win.Add_MouseRightButtonUp({
+    $menu = New-Object System.Windows.Controls.ContextMenu
+    $sizes = @(
+      @{ h = 'Compact'; s = 56 },
+      @{ h = 'Comfortable'; s = 72 },
+      @{ h = 'Large'; s = 88 }
+    )
+    foreach ($sz in $sizes) {
+      $mi = New-Object System.Windows.Controls.MenuItem
+      $mi.Header = $sz.h
+      $mi.Tag = $sz.s
+      $mi.Add_Click({
+        param($s, $e)
+        $ns = [int]$s.Tag
+        $state.size = $ns
+        Save-State
+        Apply-IslandSize $ns
+        if (-not $expanded) { Place-Island $PillW $ns }
+        Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ size = $ns } | Out-Null
+      })
+      $menu.Items.Add($mi) | Out-Null
+    }
+    $sep = New-Object System.Windows.Controls.Separator
+    $menu.Items.Add($sep) | Out-Null
+    $pinLabel = 'Pin above windows'
+    if ($win.Topmost) { $pinLabel = 'Unpin' }
+    $pin = New-Object System.Windows.Controls.MenuItem
+    $pin.Header = $pinLabel
+    $pin.Add_Click({
+      $win.Topmost = -not $win.Topmost
+      $state.top = [bool]$win.Topmost
+      Save-State
+      Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ always_on_top = $state.top } | Out-Null
+    })
+    $menu.Items.Add($pin) | Out-Null
+    $page = New-Object System.Windows.Controls.MenuItem
+    $page.Header = 'Open full page'
+    $page.Add_Click({ Start-Process ($ApiBase + '/bot/' + $BotSlug) })
+    $menu.Items.Add($page) | Out-Null
+    $hide = New-Object System.Windows.Controls.MenuItem
+    $hide.Header = 'Hide'
+    $hide.Add_Click({ Hide-Island })
+    $menu.Items.Add($hide) | Out-Null
+    $quit = New-Object System.Windows.Controls.MenuItem
+    $quit.Header = 'Quit'
+    $quit.Add_Click({ [System.Windows.Application]::Current.Shutdown() })
+    $menu.Items.Add($quit) | Out-Null
+    $menu.PlacementTarget = $win
+    $menu.IsOpen = $true
+  })
+
+  $win.FindName('BtnX').Add_Click({ Collapse-Island })
+  $win.FindName('BtnPin').Add_Click({
+    $win.Topmost = -not $win.Topmost
+    $state.top = [bool]$win.Topmost
+    Save-State
+    Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ always_on_top = $state.top } | Out-Null
+  })
+  $win.FindName('BtnPage').Add_Click({ Start-Process ($ApiBase + '/bot/' + $BotSlug) })
+  $win.FindName('BtnSend').Add_Click({ Send-Chat })
+  $win.FindName('BtnMic').Add_Click({ Start-Listen })
+  $spk = $win.FindName('BtnSpeak')
+  $spk.Opacity = if ($state.tts) { 1.0 } else { 0.45 }
+  $spk.Add_Click({
+    $state.tts = -not $state.tts
+    Save-State
+    $spk.Opacity = if ($state.tts) { 1.0 } else { 0.45 }
+    if (-not $state.tts -and $speaker) { try { $speaker.SpeakAsyncCancelAll() | Out-Null } catch {} }
+  })
+  $inputBox.Add_KeyDown({
+    param($s, $e)
+    if ($e.Key -eq 'Enter') { Send-Chat }
+  })
+}
+
 # ---------- boot ----------
-Show-Avatar
+$prof = Api-Get ('/api/bots/' + $BotSlug + '/companion')
+if (-not $prof) {
+  Add-Type -AssemblyName System.Windows.Forms
+  [System.Windows.Forms.MessageBox]::Show('Could not reach Human AI. Check the Desktop key and that the server is running.', 'Human Bot Desktop') | Out-Null
+  exit
+}
+if ($prof.bot -and $prof.bot.companion -and $prof.bot.companion.enabled -eq $false) {
+  Add-Type -AssemblyName System.Windows.Forms
+  [System.Windows.Forms.MessageBox]::Show('Desktop is disabled for this Bot. Enable it on the Bot Desktop page.', 'Human Bot Desktop') | Out-Null
+  exit
+}
+Build-Island
+$sz = $state.size
+if (-not $sz) { $sz = $PillH }
+Apply-IslandSize $sz
+if ($state.hidden) {
+  Place-Island $PillW $sz
+  Hide-Island
+} else {
+  Place-Island $PillW $sz
+}
+$win.Show()
+if (-not $state.collapsed) {
+  Expand-Island $true
+}
 [System.Windows.Application]::new().Run() | Out-Null
 '@;`
   return script
-    .replace(/__SIZE__/g, String(size))
     .replace(/__NAME__/g, c.name.replace(/"/g, ""))
-    .replace(/__ACCENT__/g, accent);
+    .replace(/__ACCENT__/g, accent)
+    .replace(/__PILLH__/g, String(pillH));
 }

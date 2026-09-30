@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
-import { getOwnedBot, sessionUser, toBot, userIsPro } from "@/lib/bots";
+import { getOwnedBot, mergeCompanionPatch, sessionUser, toBot, userIsPro } from "@/lib/bots";
 import { logAppError } from "@/lib/admin";
 
 export const runtime = "nodejs";
@@ -71,16 +71,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
       patch.voice = { tts_enabled: !!v.tts_enabled, stt_enabled: !!v.stt_enabled };
     }
     if (b.companion !== undefined && typeof b.companion === "object" && b.companion !== null) {
-      const c = b.companion as Record<string, unknown>;
-      const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? Math.round(x) : null);
-      const size = typeof c.size === "number" && c.size >= 48 && c.size <= 160 ? Math.round(c.size) : bot.companion.size;
-      patch.companion = {
-        x: num(c.x),
-        y: num(c.y),
-        size,
-        always_on_top: c.always_on_top !== false,
-        hidden: !!c.hidden,
-      };
+      patch.companion = mergeCompanionPatch(b.companion, bot.companion);
     }
     if (Object.keys(patch).length === 0) return Response.json({ bot });
     patch.updated_at = new Date().toISOString();

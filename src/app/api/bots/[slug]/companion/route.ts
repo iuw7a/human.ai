@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
-import { effectiveOwnerId, getOwnedBot, toBot, userIsPro } from "@/lib/bots";
+import { effectiveOwnerId, getOwnedBot, mergeCompanionPatch, toBot, userIsPro } from "@/lib/bots";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
   });
 }
 
-/** PATCH /api/bots/[slug]/companion {x,y,size,always_on_top,hidden} — persist (owner + Pro; session or companion key). */
+/** PATCH /api/bots/[slug]/companion {x,size,always_on_top,hidden,enabled,collapsed} — persist (owner + Pro; session or companion key). */
 export async function PATCH(req: NextRequest, { params }: { params: { slug: string } }) {
   const ownerId = await effectiveOwnerId(req);
   if (!ownerId) return Response.json({ error: "Not authenticated." }, { status: 401 });
@@ -37,18 +37,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
   }
   const bot = await getOwnedBot(params.slug, ownerId);
   if (!bot) return Response.json({ error: "Bot not found." }, { status: 404 });
-  const b = (await req.json()) as {
-    x?: unknown; y?: unknown; size?: unknown; always_on_top?: unknown; hidden?: unknown;
-  };
-  const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? Math.round(x) : null);
-  const size = typeof b.size === "number" && b.size >= 48 && b.size <= 160 ? Math.round(b.size) : bot.companion.size;
-  const companion = {
-    x: num(b.x),
-    y: num(b.y),
-    size,
-    always_on_top: b.always_on_top !== false,
-    hidden: !!b.hidden,
-  };
+  const body = (await req.json()) as unknown;
+  const companion = mergeCompanionPatch(body, bot.companion);
   const admin = createAdminSupabase();
   const { data, error } = await admin
     .from("bots")

@@ -22,6 +22,7 @@ export function BotDesktopSetup({ bot }: { bot: Bot }) {
   const [busy, setBusy] = useState(false);
   const [size, setSize] = useState(bot.companion.size);
   const [top, setTop] = useState(bot.companion.always_on_top);
+  const [enabled, setEnabled] = useState(bot.companion.enabled);
   const [error, setError] = useState<string | null>(null);
   const base = typeof window !== "undefined" ? window.location.origin : "https://usehuman.de";
 
@@ -77,12 +78,30 @@ export function BotDesktopSetup({ bot }: { bot: Bot }) {
 
       <div className="card flex items-center gap-4 p-5">
         <BotAvatar src={bot.avatar_url} name={bot.name} size={56} accent={bot.theme.accent} />
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="font-semibold text-white">{bot.name} on your desktop</p>
           <p className="mt-0.5 text-[13px] text-zinc-500">
-            A floating companion using your Bot avatar. Drag it anywhere, click to chat — no website needed.
+            A Dynamic Island at the top of your screen. Click to expand into chat — no website needed.
           </p>
         </div>
+        <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs text-zinc-300">
+          <span className={enabled ? "text-emerald-300" : "text-zinc-500"}>{enabled ? "Enabled" : "Disabled"}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            onClick={async () => {
+              const next = !enabled;
+              setEnabled(next);
+              await saveCompanion({ enabled: next });
+            }}
+            className={`relative h-6 w-11 rounded-full transition-colors ${enabled ? "bg-emerald-500/80" : "bg-ink-700"}`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${enabled ? "left-[22px]" : "left-0.5"}`}
+            />
+          </button>
+        </label>
       </div>
 
       <div className="card space-y-3 p-5">
@@ -139,19 +158,31 @@ export function BotDesktopSetup({ bot }: { bot: Bot }) {
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">2</span>
           Download & start the companion
         </h2>
-        <a href={scriptUrl} className="btn-primary inline-flex px-5 py-2 text-xs" download>
-          <Download size={14} /> Download human-bot-{bot.slug}.ps1
-        </a>
+        <div className="flex flex-wrap gap-2">
+          <a href={scriptUrl} className="btn-primary inline-flex px-5 py-2 text-xs" download>
+            <Download size={14} /> Download human-bot-{bot.slug}.ps1
+          </a>
+          <a
+            href={`/api/bots/${bot.slug}/companion-start`}
+            className="btn-ghost inline-flex border border-ink-600 px-5 py-2 text-xs"
+            download
+          >
+            <Download size={14} /> Autostart launcher (.cmd)
+          </a>
+        </div>
         <div className="rounded-xl bg-black/40 p-3">
           <p className="text-xs text-zinc-500">Run it (Windows PowerShell):</p>
           <code className="mt-1 block break-all font-mono text-xs leading-5 text-zinc-200">
             powershell -ExecutionPolicy Bypass -File human-bot-{bot.slug}.ps1
           </code>
         </div>
+        <div className="rounded-xl bg-black/40 p-3">
+          <p className="text-xs text-zinc-500">Launch at Windows login: place both files in one folder, then copy the .cmd shortcut into <span className="font-mono text-zinc-300">shell:startup</span> (Win+R → shell:startup → Enter).</p>
+        </div>
         <ul className="space-y-1 text-[13px] leading-6 text-zinc-400">
-          <li>· Drag the avatar anywhere — position is remembered.</li>
-          <li>· Drag the corner grip to resize, right-click for options.</li>
-          <li>· Click the avatar to open the mini chat (text + voice when enabled).</li>
+          <li>· The island lives top-center — click to expand into chat, click again (or Esc) to collapse.</li>
+          <li>· Drag horizontally to move it — position is remembered.</li>
+          <li>· Right-click for size, pin, full page, hide and quit.</li>
           <li>· Paste your Desktop key on first start.</li>
         </ul>
       </div>
@@ -161,12 +192,12 @@ export function BotDesktopSetup({ bot }: { bot: Bot }) {
           <Monitor size={15} /> Companion appearance
         </h2>
         <div>
-          <p className="label">Avatar size ({size}px)</p>
+          <p className="label">Island size ({size}px)</p>
           <input
             type="range"
-            min={48}
-            max={160}
-            value={size}
+            min={40}
+            max={100}
+            value={Math.min(100, Math.max(40, size))}
             onChange={(e) => setSize(Number(e.target.value))}
             onMouseUp={() => saveCompanion({ size })}
             onTouchEnd={() => saveCompanion({ size })}
