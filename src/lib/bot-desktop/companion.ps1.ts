@@ -128,8 +128,8 @@ function Speak($text) {
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   WindowStyle="None" AllowsTransparency="True" Background="Transparent"
   ShowInTaskbar="False" Title="__NAME__">
-  <Border Name="Island" CornerRadius="24" Background="#0B0B0DF2"
-    BorderBrush="#2A2A30" BorderThickness="1">
+  <Border Name="Island" CornerRadius="28" Background="#0C0C10F2"
+    BorderBrush="#33333B" BorderThickness="1">
     <Border.Effect>
       <DropShadowEffect Color="Black" Opacity="0.55" ShadowDepth="6" BlurRadius="22" />
     </Border.Effect>
@@ -164,17 +164,17 @@ function Speak($text) {
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Background="#00000000" Padding="14,6,14,8" Name="HeadDrag">
+        <Border Grid.Row="0" Background="#00000000" Padding="16,12,16,10" Name="HeadDrag">
           <DockPanel>
-            <Ellipse Name="HeadAva" Width="24" Height="24" DockPanel.Dock="Left" Margin="0,0,8,0" />
+            <Ellipse Name="HeadAva" Width="40" Height="40" DockPanel.Dock="Left" Margin="0,0,10,0" />
             <StackPanel VerticalAlignment="Center">
-              <TextBlock Name="HeadBotName" Foreground="White" FontWeight="SemiBold" FontSize="12" />
+              <TextBlock Name="HeadBotName" Foreground="White" FontWeight="Bold" FontSize="15" />
               <TextBlock Name="HeadStatus" Foreground="#a1a1aa" FontSize="11" Text="Idle" />
             </StackPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
               <Button Name="BtnPin" Content="Pin" ToolTip="Stay above windows" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="11" Padding="6,2" Cursor="Hand" />
               <Button Name="BtnPage" Content="Open" ToolTip="Open full page" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="11" Padding="6,2" Cursor="Hand" />
-              <Button Name="BtnX" Content="X" ToolTip="Collapse (Esc)" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="12" Padding="8,2" Cursor="Hand" />
+              <Button Name="BtnX" Content="X" ToolTip="Collapse (Esc)" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="13" Padding="10,4" Cursor="Hand" />
             </StackPanel>
           </DockPanel>
         </Border>
@@ -185,7 +185,7 @@ function Speak($text) {
           HorizontalAlignment="Center" VerticalAlignment="Center" Text="Ask for anything…" IsHitTestVisible="False" />
         <TextBlock Grid.Row="2" Name="StateLine" Foreground="#71717a" FontSize="11" Margin="14,2" Text="" Visibility="Collapsed" />
         <DockPanel Grid.Row="3" Margin="14,4,14,2" LastChildFill="False">
-          <TextBlock Name="TaskCount" Foreground="#71717a" FontSize="11" Text="Tasks" VerticalAlignment="Center" />
+          <TextBlock Name="TaskCount" Foreground="#A1A1AA" FontSize="12" FontWeight="SemiBold" Text="Tasks" VerticalAlignment="Center" />
           <Button Name="BtnAddTask" DockPanel.Dock="Right" Content="+ Task" ToolTip="Add input text as task" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="11" Padding="6,2" Cursor="Hand" />
         </DockPanel>
         <ScrollViewer Grid.Row="4" Margin="12,0,12,2" MaxHeight="150" Name="TaskScroller" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
@@ -198,24 +198,24 @@ function Speak($text) {
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <TextBox Name="Input" Grid.Column="0" Background="#131316" Foreground="White"
-            BorderBrush="#26262c" BorderThickness="1" Padding="9,8" FontSize="13"
+          <TextBox Name="Input" Grid.Column="0" Background="#16161B" Foreground="White"
+            BorderBrush="#2E2E35" BorderThickness="1" Padding="12,10" FontSize="13"
             VerticalContentAlignment="Center">
             <TextBox.Resources>
-              <Style TargetType="Border"><Setter Property="CornerRadius" Value="12" /></Style>
+              <Style TargetType="Border"><Setter Property="CornerRadius" Value="16" /></Style>
             </TextBox.Resources>
           </TextBox>
           <Button Name="BtnMic" Grid.Column="1" Content="Mic" ToolTip="Voice input" Margin="6,0,0,0" FontSize="11"
-            Background="#131316" Foreground="White" BorderBrush="#26262c" Width="42" Cursor="Hand">
-            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="12" /></Style></Button.Resources>
+            Background="#16161B" Foreground="White" BorderBrush="#2E2E35" Width="44" Cursor="Hand">
+            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="16" /></Style></Button.Resources>
           </Button>
           <Button Name="BtnSpeak" Grid.Column="2" Content="Read" ToolTip="Read aloud" Margin="6,0,0,0" FontSize="11"
-            Background="#131316" Foreground="White" BorderBrush="#26262c" Width="42" Cursor="Hand">
-            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="12" /></Style></Button.Resources>
+            Background="#16161B" Foreground="White" BorderBrush="#2E2E35" Width="44" Cursor="Hand">
+            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="16" /></Style></Button.Resources>
           </Button>
           <Button Name="BtnSend" Grid.Column="3" Content="Send" Margin="6,0,0,0" FontSize="12" FontWeight="SemiBold"
-            Background="#e5484d" Foreground="White" BorderThickness="0" Padding="12,0" Cursor="Hand">
-            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="12" /></Style></Button.Resources>
+            Background="#e5484d" Foreground="White" BorderThickness="0" Padding="14,0" Cursor="Hand">
+            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="16" /></Style></Button.Resources>
           </Button>
         </Grid>
       </Grid>
@@ -488,8 +488,8 @@ function Add-Message($role, $text) {
     $hint = $win.FindName('HintLine')
     if ($hint) { $hint.Visibility = 'Collapsed' }
     $b = New-Object System.Windows.Controls.Border
-    if ($role -eq 'user') { $b.CornerRadius = New-Object System.Windows.CornerRadius(12,12,4,12) } else { $b.CornerRadius = New-Object System.Windows.CornerRadius(12,12,12,4) }
-    $b.Padding = '10,7'
+    if ($role -eq 'user') { $b.CornerRadius = New-Object System.Windows.CornerRadius(14,14,5,14) } else { $b.CornerRadius = New-Object System.Windows.CornerRadius(14,14,14,5) }
+    $b.Padding = '11,8'
     $b.Margin = '0,0,0,8'
     $b.MaxWidth = 300
     if ($role -eq 'user') {
@@ -578,8 +578,8 @@ function Send-Chat {
       $win.Dispatcher.Invoke([action]{
         $headStatus.Text = 'Responding'
         $b = New-Object System.Windows.Controls.Border
-        $b.CornerRadius = New-Object System.Windows.CornerRadius(12,12,12,4)
-        $b.Padding = '10,7'
+        $b.CornerRadius = New-Object System.Windows.CornerRadius(14,14,14,5)
+        $b.Padding = '11,8'
         $b.Margin = '0,0,0,8'
         $b.MaxWidth = 300
         $b.Background = $bgBrush
