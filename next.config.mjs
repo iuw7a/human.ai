@@ -7,8 +7,9 @@ const nextConfig = {
   },
   async redirects() {
     return [
+      // Legacy entry point. NOTE: /desktop/approve (device login) must stay
+      // reachable, so only the exact path redirects — no :path* wildcard.
       { source: "/desktop", destination: "/computer-use", permanent: false },
-      { source: "/desktop/:path*", destination: "/computer-use/:path*", permanent: false },
     ];
   },
 };
