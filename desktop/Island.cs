@@ -846,16 +846,44 @@ namespace HumanAI
 
         static void PatchReq(string path, object body)
         {
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(Api.Base.TrimEnd('/') + path);
-            req.Method = "PATCH";
-            req.Timeout = 30000;
-            req.ContentType = "application/json";
-            req.UserAgent = "HumanAI-Desktop/1.0";
-            if (Api.Key != "") req.Headers["x-api-key"] = Api.Key;
-            byte[] buf = System.Text.Encoding.UTF8.GetBytes(Json.Encode(body));
-            req.ContentLength = buf.Length;
-            using (System.IO.Stream s = req.GetRequestStream()) s.Write(buf, 0, buf.Length);
-            using (HttpWebResponse res = (HttpWebResponse)req.GetResponse()) { }
+            string url = Api.Base.TrimEnd('/') + path;
+            string payload = Json.Encode(body);
+            for (int hop = 0; hop < 2; hop++)
+            {
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
+                req.Method = "PATCH";
+                req.Timeout = 30000;
+                req.ContentType = "application/json";
+                req.UserAgent = "HumanAI-Desktop/1.0";
+                req.AllowAutoRedirect = false;
+                if (Api.Key != "") req.Headers["x-api-key"] = Api.Key;
+                byte[] buf = System.Text.Encoding.UTF8.GetBytes(payload);
+                req.ContentLength = buf.Length;
+                using (System.IO.Stream s = req.GetRequestStream()) s.Write(buf, 0, buf.Length);
+                try
+                {
+                    using (HttpWebResponse res = (HttpWebResponse)req.GetResponse()) { }
+                    return;
+                }
+                catch (WebException ex)
+                {
+                    HttpWebResponse r = ex.Response as HttpWebResponse;
+                    int st = r != null ? (int)r.StatusCode : 0;
+                    string loc = r != null ? r.Headers["Location"] : null;
+                    if (r != null) r.Close();
+                    if ((st == 301 || st == 302 || st == 303 || st == 307 || st == 308) && loc != null && loc != "")
+                    {
+                        if (loc.StartsWith("http://") || loc.StartsWith("https://")) url = loc;
+                        else
+                        {
+                            try { url = new System.Uri(new System.Uri(url), loc).ToString(); }
+                            catch { throw; }
+                        }
+                        continue;
+                    }
+                    throw;
+                }
+            }
         }
 
         void Speak(string text)

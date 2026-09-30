@@ -162,14 +162,15 @@ namespace HumanAI
 
         public delegate void TokenHandler(string token);
 
-        static HttpWebRequest Make(string method, string path, string body)
+        static HttpWebRequest Make(string method, string url, string body, int timeout)
         {
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(Base.TrimEnd('/') + path);
+            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = method;
-            req.Timeout = 30000;
-            req.ReadWriteTimeout = 30000;
+            req.Timeout = timeout;
+            req.ReadWriteTimeout = timeout;
             req.UserAgent = "HumanAI-Desktop/1.0";
             req.Accept = "application/json";
+            req.AllowAutoRedirect = false;
             if (Key != "") req.Headers["x-api-key"] = Key;
             if (body != null)
             {
@@ -179,6 +180,49 @@ namespace HumanAI
                 using (Stream s = req.GetRequestStream()) s.Write(buf, 0, buf.Length);
             }
             return req;
+        }
+
+        static string CombineUrl(string url, string loc)
+        {
+            if (loc.StartsWith("http://") || loc.StartsWith("https://")) return loc;
+            try
+            {
+                Uri baseUri = new Uri(url);
+                return new Uri(baseUri, loc).ToString();
+            }
+            catch { return loc; }
+        }
+
+        static bool IsRedirect(int status)
+        {
+            return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+        }
+
+        // One manual redirect hop (servers often redirect apex -> www).
+        static HttpWebResponse GetResp(string method, string path, string body, int timeout)
+        {
+            string url = Base.TrimEnd('/') + path;
+            for (int hop = 0; hop < 2; hop++)
+            {
+                HttpWebRequest req = Make(method, url, body, timeout);
+                try { return (HttpWebResponse)req.GetResponse(); }
+                catch (WebException ex)
+                {
+                    HttpWebResponse r = ex.Response as HttpWebResponse;
+                    if (r != null && IsRedirect((int)r.StatusCode))
+                    {
+                        string loc = r.Headers["Location"];
+                        r.Close();
+                        if (loc != null && loc != "")
+                        {
+                            url = CombineUrl(url, loc);
+                            continue;
+                        }
+                    }
+                    throw;
+                }
+            }
+            throw new WebException("Too many redirects.");
         }
 
         static string ReadError(WebException ex)
@@ -194,10 +238,18 @@ namespace HumanAI
                 string msg = "Request failed (" + status + ").";
                 try
                 {
-                    Dictionary<string, object> d = Json.DecodeDict(body);
-                    string e = Json.Str(d, "error");
-                    if (e != "") msg = e;
-                    else if (body.Trim() != "") msg = body.Trim().Substring(0, Math.Min(200, body.Trim().Length));
+                    string trimmed = body.Trim();
+                    if (trimmed.StartsWith("<"))
+                    {
+                        msg = "Server does not support desktop login (website update required).";
+                    }
+                    else
+                    {
+                        Dictionary<string, object> d = Json.DecodeDict(body);
+                        string e = Json.Str(d, "error");
+                        if (e != "") msg = e;
+                        else if (trimmed != "") msg = trimmed.Substring(0, Math.Min(200, trimmed.Length));
+                    }
                 }
                 catch { }
                 throw new ApiError(status, msg);
@@ -210,8 +262,7 @@ namespace HumanAI
         {
             try
             {
-                HttpWebRequest req = Make("GET", path, null);
-                using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
+                using (HttpWebResponse res = GetResp("GET", path, null, 30000))
                 using (StreamReader sr = new StreamReader(res.GetResponseStream(), Encoding.UTF8))
                     return Json.DecodeDict(sr.ReadToEnd());
             }
@@ -222,8 +273,7 @@ namespace HumanAI
         {
             try
             {
-                HttpWebRequest req = Make("POST", path, Json.Encode(body));
-                using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
+                using (HttpWebResponse res = GetResp("POST", path, Json.Encode(body), 30000))
                 using (StreamReader sr = new StreamReader(res.GetResponseStream(), Encoding.UTF8))
                     return Json.DecodeDict(sr.ReadToEnd());
             }
@@ -251,18 +301,11 @@ namespace HumanAI
                 msgs.Add(mm);
             }
             payload["messages"] = msgs;
-            HttpWebRequest req;
-            try
-            {
-                req = Make("POST", "/api/bots/" + Slug + "/chat", Json.Encode(payload));
-                req.Timeout = 150000;
-                req.ReadWriteTimeout = 150000;
-            }
-            catch (WebException ex) { ReadError(ex); return ""; }
+            string chatBody = Json.Encode(payload);
             StringBuilder full = new StringBuilder();
             try
             {
-                using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
+                using (HttpWebResponse res = GetResp("POST", "/api/bots/" + Slug + "/chat", chatBody, 150000))
                 using (Stream s = res.GetResponseStream())
                 using (StreamReader sr = new StreamReader(s, Encoding.UTF8))
                 {
