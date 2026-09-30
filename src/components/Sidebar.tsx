@@ -11,6 +11,7 @@ import {
   Plug,
   Crown,
   Bot,
+  Sparkles,
   User,
   Settings,
   Brain,
@@ -40,6 +41,7 @@ interface ChatItem {
 /** Workspace-only navigation. Account-level pages live in the user menu. */
 const NAV = [
   { href: "/agent", label: "Agent", icon: Bot },
+  { href: "/bots", label: "My Bots", icon: Sparkles },
   { href: "/plugins", label: "Plugins", icon: Puzzle },
   { href: "/library", label: "Library", icon: LibraryBig },
   { href: "/mcp", label: "MCP Servers", icon: Plug },
