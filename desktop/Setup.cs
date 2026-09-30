@@ -12,10 +12,16 @@ namespace HumanAI
     {
         TextBox _baseBox;
         Label _codeLbl, _statusLbl;
+        TextBox _linkBox;
         Button _openBtn, _newBtn;
         System.Windows.Forms.Timer _poll;
         string _code = "";
         public string ApiBase = "https://usehuman.de";
+
+        string ApproveUrl()
+        {
+            return ApiBase.TrimEnd('/') + "/desktop/approve?code=" + _code;
+        }
 
         public LoginForm()
         {
@@ -84,7 +90,12 @@ namespace HumanAI
             _openBtn.Enabled = false;
             _openBtn.Click += delegate
             {
-                try { Process.Start(ApiBase.TrimEnd('/') + "/desktop/approve?code=" + _code); }
+                if (_code == "" || !_code.Contains("-"))
+                {
+                    FetchCode();
+                    return;
+                }
+                try { Process.Start(ApproveUrl()); }
                 catch { }
             };
             Controls.Add(_openBtn);
@@ -110,6 +121,18 @@ namespace HumanAI
             _statusLbl.Location = new Point(24, 318);
             _statusLbl.Size = new Size(320, 40);
             Controls.Add(_statusLbl);
+
+            _linkBox = new TextBox();
+            _linkBox.ReadOnly = true;
+            _linkBox.BorderStyle = BorderStyle.None;
+            _linkBox.BackColor = BackColor;
+            _linkBox.ForeColor = Color.FromArgb(0x38, 0xBD, 0xF8);
+            _linkBox.Font = new Font("Segoe UI", 8);
+            _linkBox.TextAlign = HorizontalAlignment.Center;
+            _linkBox.Location = new Point(24, 360);
+            _linkBox.Size = new Size(320, 40);
+            _linkBox.Multiline = true;
+            Controls.Add(_linkBox);
 
             _poll = new System.Windows.Forms.Timer();
             _poll.Interval = 2500;
@@ -137,9 +160,11 @@ namespace HumanAI
                     Api.Base = ApiBase;
                     Dictionary<string, object> d = Api.Post("/api/desktop/device/start", new Dictionary<string, object>());
                     _code = Json.Str(d, "code");
+                    if (_code == "" || !_code.Contains("-")) throw new Exception("empty code");
                     BeginInvoke(new Action(delegate
                     {
                         _codeLbl.Text = _code;
+                        _linkBox.Text = ApproveUrl();
                         _openBtn.Enabled = true;
                         SetStatus("Open the website login and approve this code.");
                         _poll.Start();
