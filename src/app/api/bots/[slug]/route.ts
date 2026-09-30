@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
-import { getOwnedBot, resolveBotModel, sessionUser, toBot, userIsPro } from "@/lib/bots";
+import { getOwnedBot, sessionUser, toBot, userIsPro } from "@/lib/bots";
 import { logAppError } from "@/lib/admin";
 
 export const runtime = "nodejs";
@@ -33,7 +33,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
       description?: string;
       personality?: string;
       instructions?: string;
-      model_id?: string;
       memory_enabled?: boolean;
       include_user_memory?: boolean;
       tools?: { web_search?: boolean; mcp_server_ids?: unknown };
@@ -50,11 +49,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
     if (b.description !== undefined) patch.description = b.description.slice(0, 500);
     if (b.personality !== undefined) patch.personality = b.personality.slice(0, 2000);
     if (b.instructions !== undefined) patch.instructions = b.instructions.slice(0, 4000);
-    if (b.model_id !== undefined) {
-      const model = await resolveBotModel(b.model_id.slice(0, 80));
-      if (!model.ok) return Response.json({ error: model.error }, { status: 400 });
-      patch.model_id = b.model_id.slice(0, 80);
-    }
+    // Model is backend/admin-owned: never user-settable here.
     if (b.memory_enabled !== undefined) patch.memory_enabled = !!b.memory_enabled;
     if (b.include_user_memory !== undefined) patch.include_user_memory = !!b.include_user_memory;
     if (b.tools !== undefined && typeof b.tools === "object" && b.tools !== null) {

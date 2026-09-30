@@ -52,7 +52,22 @@ create table if not exists public.bot_memories (
   created_at timestamptz not null default now()
 );
 
--- Repair columns on partial earlier runs
+-- Bot image gallery (up to 4 per Bot; lowest position = primary avatar)
+create table if not exists public.bot_images (
+  id uuid primary key default gen_random_uuid(),
+  bot_id uuid not null references public.bots(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  storage_path text not null,
+  position integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table public.bot_images
+  add column if not exists bot_id uuid,
+  add column if not exists user_id uuid,
+  add column if not exists storage_path text,
+  add column if not exists position integer not null default 0,
+  add column if not exists created_at timestamptz not null default now();
 alter table public.bots
   add column if not exists owner_id uuid,
   add column if not exists slug text,
@@ -122,6 +137,11 @@ begin
   ) then
     create index bot_memories_bot_idx on public.bot_memories(bot_id, created_at);
   end if;
+  if not exists (
+    select 1 from pg_indexes where schemaname = 'public' and indexname = 'bot_images_bot_idx'
+  ) then
+    create index bot_images_bot_idx on public.bot_images(bot_id, position);
+  end if;
 end $$;
 
 -- Public bucket for bot avatars (uploads go through the API with service role)
@@ -136,6 +156,7 @@ alter table public.bots enable row level security;
 alter table public.bot_conversations enable row level security;
 alter table public.bot_messages enable row level security;
 alter table public.bot_memories enable row level security;
+alter table public.bot_images enable row level security;
 
 drop policy if exists "own bots" on public.bots;
 create policy "own bots" on public.bots
@@ -151,4 +172,8 @@ create policy "own bot messages" on public.bot_messages
 
 drop policy if exists "own bot memories" on public.bot_memories;
 create policy "own bot memories" on public.bot_memories
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "own bot images" on public.bot_images;
+create policy "own bot images" on public.bot_images
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

@@ -1,15 +1,7 @@
 import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
-import {
-  MAX_BOTS_PER_USER,
-  normalizeSlug,
-  resolveBotModel,
-  sessionUser,
-  toBot,
-  userIsPro,
-  validSlug,
-} from "@/lib/bots";
-import { logAppError } from "@/lib/admin";
+import { MAX_BOTS_PER_USER, normalizeSlug, resolveBotModel, sessionUser, toBot, userIsPro, validSlug } from "@/lib/bots";
+import { defaultDbModelSlug, logAppError } from "@/lib/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,9 +53,10 @@ export async function POST(req: NextRequest) {
     if (!validSlug(slug)) {
       return Response.json({ error: "Bot ID must be 3-30 chars: a-z, 0-9, dash." }, { status: 400 });
     }
-    const modelId = (b.model_id ?? "human-ai").slice(0, 80);
+    // The backend decides the model (admin default). Users never choose it.
+    const modelId = await defaultDbModelSlug();
     const model = await resolveBotModel(modelId);
-    if (!model.ok) return Response.json({ error: model.error }, { status: 400 });
+    if (!model.ok) return Response.json({ error: "No usable model is configured. Contact support." }, { status: 500 });
 
     const admin = createAdminSupabase();
     const { data: existing } = await admin.from("bots").select("id").eq("owner_id", user.id);
