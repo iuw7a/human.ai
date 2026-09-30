@@ -2,11 +2,17 @@ import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
 import { extractBotMemory, runBotTurn, type BotBodyMessage } from "@/lib/bot-chat";
 import { effectiveOwnerId, getOwnedBot, resolveBotModel, touchBot, userIsPro } from "@/lib/bots";
-import { logAppError } from "@/lib/admin";
+import { defaultDbModelSlug, logAppError, resolveDbModel } from "@/lib/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
+
+/** Provider retired/removed the model — worth one automatic retry on the admin default. */
+function isDeadModelError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  return /API error 40[04]|no longer available|end of life|model_not_found|does not exist|model .* not found/i.test(msg);
+}
 
 /**
  * POST /api/bots/[slug]/chat {conversation_id, messages:[{role,content,images?}]}
@@ -52,16 +58,36 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       async start(controller) {
         const send = (data: string) => controller.enqueue(encoder.encode(`data: ${data}\n\n`));
         try {
-          const { full } = await runBotTurn(
-            {
-              bot,
-              ownerId,
-              provider: model.provider,
-              providerModelId: model.providerModelId,
-              messages,
-            },
-            send
-          );
+          let full: string;
+          try {
+            ({ full } = await runBotTurn(
+              {
+                bot,
+                ownerId,
+                provider: model.provider,
+                providerModelId: model.providerModelId,
+                messages,
+              },
+              send
+            ));
+          } catch (e) {
+            // The Bot's model was retired/removed: retry once on the admin default.
+            const fallbackSlug = await defaultDbModelSlug();
+            const fallback = await resolveDbModel(fallbackSlug);
+            const sameTarget =
+              fallback?.provider === model.provider && fallback?.providerModelId === model.providerModelId;
+            if (!isDeadModelError(e) || !fallback || sameTarget) throw e;
+            ({ full } = await runBotTurn(
+              {
+                bot,
+                ownerId,
+                provider: fallback.provider === "groq" ? "groq" : "nvidia",
+                providerModelId: fallback.providerModelId,
+                messages,
+              },
+              send
+            ));
+          }
           send("[DONE]");
           // Persist assistant reply + title (best effort, after stream).
           try {
@@ -97,7 +123,10 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
         } catch (e) {
           const raw = e instanceof Error ? e.message : "Generation failed.";
           void logAppError("api/bots chat", raw, { model: bot.model_id });
-          send(JSON.stringify({ error: raw }));
+          const friendly = isDeadModelError(e)
+            ? `The Bot's model "${bot.model_id}" was retired by its provider. An admin can point the Bot at a live model in /admin → Models.`
+            : raw;
+          send(JSON.stringify({ error: friendly }));
         } finally {
           controller.close();
         }
