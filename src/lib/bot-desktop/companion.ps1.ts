@@ -166,23 +166,21 @@ function Speak($text) {
           <RowDefinition Height="*" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
-          <RowDefinition Height="Auto" />
-          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Background="#00000000" Padding="16,12,16,10" Name="HeadDrag"
-          BorderBrush="#26262C" BorderThickness="0,0,0,1">
-          <DockPanel>
-            <Ellipse Name="HeadAva" Width="40" Height="40" DockPanel.Dock="Left" Margin="0,0,10,0" />
-            <StackPanel VerticalAlignment="Center">
-              <TextBlock Name="HeadBotName" Foreground="White" FontWeight="Bold" FontSize="15" />
-              <TextBlock Name="HeadStatus" Foreground="#a1a1aa" FontSize="11" Text="Idle" />
-            </StackPanel>
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-              <Button Name="BtnPin" Content="Pin" ToolTip="Stay above windows" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="11" Padding="6,2" Cursor="Hand" />
-              <Button Name="BtnPage" Content="Open" ToolTip="Open full page" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="11" Padding="6,2" Cursor="Hand" />
-              <Button Name="BtnX" Content="X" ToolTip="Collapse (Esc)" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="13" Padding="10,4" Cursor="Hand" />
-            </StackPanel>
-          </DockPanel>
+        <Border Grid.Row="0" Background="#00000000" Padding="0,16,0,8" Name="HeadDrag">
+          <StackPanel HorizontalAlignment="Center">
+            <Border Width="96" Height="88" CornerRadius="26" Background="#050506"
+              BorderBrush="#26262C" BorderThickness="1" HorizontalAlignment="Center">
+              <Canvas>
+                <Ellipse Name="EyeL" Canvas.Left="22" Canvas.Top="26" Width="20" Height="30" Fill="White" />
+                <Ellipse Name="EyeR" Canvas.Left="54" Canvas.Top="26" Width="20" Height="30" Fill="White" />
+                <Path Stroke="White" StrokeThickness="2.5" StrokeLineCap="Round" Data="M 38,62 Q 48,69 58,62" />
+              </Canvas>
+            </Border>
+            <TextBlock Name="HeadStatus" Foreground="#a1a1aa" FontSize="11" Text="Idle"
+              HorizontalAlignment="Center" Margin="0,8,0,0" />
+            <TextBlock Name="HeadBotName" Visibility="Collapsed" />
+          </StackPanel>
         </Border>
         <ScrollViewer Grid.Row="1" Margin="12,0" Name="Scroller" VerticalScrollBarVisibility="Auto">
           <StackPanel Name="Messages" />
@@ -190,40 +188,33 @@ function Speak($text) {
         <TextBlock Grid.Row="1" Name="HintLine" Foreground="#52525b" FontSize="13"
           HorizontalAlignment="Center" VerticalAlignment="Center" Text="Ask for anything…" IsHitTestVisible="False" />
         <TextBlock Grid.Row="2" Name="StateLine" Foreground="#71717a" FontSize="11" Margin="14,2" Text="" Visibility="Collapsed" />
-        <DockPanel Grid.Row="3" Margin="14,4,14,2" LastChildFill="False">
-          <TextBlock Name="TaskCount" Foreground="#A1A1AA" FontSize="12" FontWeight="SemiBold" Text="Tasks" VerticalAlignment="Center" />
-          <Button Name="BtnAddTask" DockPanel.Dock="Right" Content="+ Task" ToolTip="Add input text as task" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="11" Padding="6,2" Cursor="Hand" />
-        </DockPanel>
-        <ScrollViewer Grid.Row="4" Margin="12,0,12,2" MaxHeight="150" Name="TaskScroller" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-          <StackPanel Name="TaskList" />
-        </ScrollViewer>
-        <Grid Grid.Row="5" Margin="12,6,12,12">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <TextBox Name="Input" Grid.Column="0" Background="#0E0E12" Foreground="White"
-            BorderBrush="#2E2E35" BorderThickness="1" Padding="14,11" FontSize="13"
-            VerticalContentAlignment="Center">
-            <TextBox.Resources>
-              <Style TargetType="Border"><Setter Property="CornerRadius" Value="20" /></Style>
-            </TextBox.Resources>
-          </TextBox>
-          <Button Name="BtnMic" Grid.Column="1" Content="Mic" ToolTip="Voice input" Margin="6,0,0,0" FontSize="11"
-            Background="#15151B" Foreground="White" BorderBrush="#2E2E35" Width="44" Cursor="Hand">
-            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="20" /></Style></Button.Resources>
-          </Button>
-          <Button Name="BtnSpeak" Grid.Column="2" Content="Read" ToolTip="Read aloud" Margin="6,0,0,0" FontSize="11"
-            Background="#15151B" Foreground="White" BorderBrush="#2E2E35" Width="44" Cursor="Hand">
-            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="20" /></Style></Button.Resources>
-          </Button>
-          <Button Name="BtnSend" Grid.Column="3" Content="Send" Margin="6,0,0,0" FontSize="12" FontWeight="SemiBold"
-            Background="#e5484d" Foreground="White" BorderThickness="0" Padding="16,0" Cursor="Hand">
-            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="20" /></Style></Button.Resources>
-          </Button>
-        </Grid>
+        <Border Grid.Row="3" Margin="12,6,12,12" CornerRadius="22" Background="#050506"
+          BorderBrush="#26262C" BorderThickness="1" Padding="14,10">
+          <StackPanel>
+            <DockPanel Margin="2,0,2,8" LastChildFill="True">
+              <TextBlock Text="Plan" Foreground="#71717a" FontSize="11" Margin="0,0,8,0" VerticalAlignment="Center" />
+              <TextBlock Name="PlanLine" Foreground="White" FontSize="12" Text="Nothing planned soon" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            </DockPanel>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBox Name="Input" Grid.Column="0" Background="Transparent" Foreground="White"
+                BorderThickness="0" Padding="2,6" FontSize="14" CaretBrush="White"
+                VerticalContentAlignment="Center" />
+              <Button Name="BtnMic" Grid.Column="1" Content="Mic" ToolTip="Voice input" Margin="8,0,0,0" FontSize="10"
+                Background="#1C1C22" Foreground="White" BorderThickness="0" Width="34" Height="34" Cursor="Hand">
+                <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="17" /></Style></Button.Resources>
+              </Button>
+              <Button Name="BtnGrid" Grid.Column="2" Content="▦" ToolTip="Menu" Margin="8,0,0,0" FontSize="14"
+                Background="#1C1C22" Foreground="White" BorderThickness="0" Width="34" Height="34" Cursor="Hand">
+                <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="17" /></Style></Button.Resources>
+              </Button>
+            </Grid>
+          </StackPanel>
+        </Border>
       </Grid>
     </DockPanel>
   </Border>
@@ -241,11 +232,10 @@ $avatarFallback = $null
 $pillName = $null
 $pillSub = $null
 $pillDot = $null
-$headAva = $null
 $headBotName = $null
-$taskCount = $null
-$taskList = $null
-$taskScroller = $null
+$eyeL = $null
+$eyeR = $null
+$planLine = $null
 $openTasks = @()
 $chevron = $null
 $chatArea = $null
@@ -380,6 +370,32 @@ $pulseTimer.Add_Tick({
 })
 function Start-AvatarPulse { $pulseTimer.Start() }
 function Stop-AvatarPulse { $pulseTimer.Stop(); $avatarWrap.Opacity = 1.0 }
+
+# mascot blink: briefly narrow the eyes every few seconds while expanded
+$blinkShut = New-Object System.Windows.Threading.DispatcherTimer
+$blinkShut.Interval = [TimeSpan]::FromMilliseconds(150)
+$blinkShut.Add_Tick({
+  $blinkShut.Stop()
+  try {
+    $eyeL.Height = 30
+    $eyeR.Height = 30
+    $eyeL.SetValue([System.Windows.Controls.Canvas]::TopProperty, 26.0)
+    $eyeR.SetValue([System.Windows.Controls.Canvas]::TopProperty, 26.0)
+  } catch {}
+})
+$blinkTimer = New-Object System.Windows.Threading.DispatcherTimer
+$blinkTimer.Interval = [TimeSpan]::FromMilliseconds(3400)
+$blinkTimer.Add_Tick({
+  if (-not $expanded) { return }
+  try {
+    $eyeL.Height = 4
+    $eyeR.Height = 4
+    $eyeL.SetValue([System.Windows.Controls.Canvas]::TopProperty, 39.0)
+    $eyeR.SetValue([System.Windows.Controls.Canvas]::TopProperty, 39.0)
+    $blinkShut.Start()
+  } catch {}
+})
+$blinkTimer.Start()
 
 $dotsTimer = New-Object System.Windows.Threading.DispatcherTimer
 $dotsTimer.Interval = [TimeSpan]::FromMilliseconds(380)
@@ -771,72 +787,23 @@ function Refresh-Tasks {
     $t = Api-Get ('/api/bots/' + $BotSlug + '/tasks')
     if (-not $t -or -not $t.tasks) { return }
     $script:openTasks = @($t.tasks | Where-Object { -not $_.done })
-    $win.Dispatcher.Invoke([action]{
-      $taskList.Children.Clear()
-      foreach ($task in $script:openTasks) {
-        $card = New-Object System.Windows.Controls.Border
-        $card.CornerRadius = New-Object System.Windows.CornerRadius(14)
-        $card.Background = To-Brush '#101014'
-        $card.BorderBrush = To-Brush '#26262c'
-        $card.BorderThickness = '1'
-        $card.Padding = '10,8'
-        $card.Margin = '0,0,0,6'
-        $row = New-Object System.Windows.Controls.DockPanel
-        $btn = New-Object System.Windows.Controls.Button
-        $btn.Content = '○'
-        $btn.Tag = [string]$task.id
-        $btn.Background = 'Transparent'
-        $btn.Foreground = '#71717a'
-        $btn.BorderThickness = '0'
-        $btn.FontSize = 14
-        $btn.Padding = '2,0,6,0'
-        $btn.Cursor = 'Hand'
-        $btn.Add_Click({
-          param($s, $e)
-          Api-Patch ('/api/bots/' + $BotSlug + '/tasks') @{ id = [string]$s.Tag; done = $true } | Out-Null
-          Refresh-Tasks
-        })
-        $txt = New-Object System.Windows.Controls.StackPanel
-        $tt = New-Object System.Windows.Controls.TextBlock
-        $tt.Text = [string]$task.title
-        $tt.Foreground = 'White'
-        $tt.FontSize = 12
-        $tt.TextWrapping = 'Wrap'
-        $txt.Children.Add($tt) | Out-Null
-        if ($task.due_at) {
-          try {
-            $due = [DateTime]$task.due_at
-            $dd = New-Object System.Windows.Controls.TextBlock
-            $dd.Text = $due.ToString('g')
-            $dd.Foreground = '#71717a'
-            $dd.FontSize = 10
-            $txt.Children.Add($dd) | Out-Null
-          } catch {}
-        }
-        $row.Children.Add($btn) | Out-Null
-        $row.Children.Add($txt) | Out-Null
-        $card.Child = $row
-        $taskList.Children.Add($card) | Out-Null
-      }
-      $n = $script:openTasks.Count
-      $subText = 'Ask for anything…'
-      if ($n -gt 0) {
-        $taskCount.Text = 'Tasks · ' + $n + ' open'
-        $taskScroller.Visibility = 'Visible'
-        $withDue = @($script:openTasks | Where-Object { $_.due_at } | Select-Object -First 1)
-        if ($withDue.Count -gt 0) {
-          $dt = [string]$withDue[0].title
-          $subText = 'Due: ' + $dt.Substring(0, [Math]::Min(26, $dt.Length))
-        } else {
-          $ft = [string]$script:openTasks[0].title
-          $subText = $ft.Substring(0, [Math]::Min(26, $ft.Length))
-        }
+    $n = $script:openTasks.Count
+    $plan = 'Nothing planned soon'
+    if ($n -gt 0) {
+      $withDue = @($script:openTasks | Where-Object { $_.due_at } | Select-Object -First 1)
+      if ($withDue.Count -gt 0) {
+        $dt = [string]$withDue[0].title
+        $plan = $dt.Substring(0, [Math]::Min(40, $dt.Length))
       } else {
-        $taskCount.Text = 'Tasks'
-        $taskScroller.Visibility = 'Collapsed'
+        $ft = [string]$script:openTasks[0].title
+        $plan = $ft.Substring(0, [Math]::Min(40, $ft.Length))
       }
+      if ($n -gt 1) { $plan = $plan + ' (+' + ($n - 1) + ' more)' }
+    }
+    $win.Dispatcher.Invoke([action]{
+      $planLine.Text = $plan
       if ($script:uiState -eq 'idle' -or $script:uiState -eq 'done' -or $script:uiState -eq $null -or $script:uiState -eq '') {
-        $pillSub.Text = $subText
+        if ($n -gt 0) { $pillSub.Text = $plan } else { $pillSub.Text = 'Ask for anything…' }
       }
     })
   } catch {}
@@ -889,11 +856,10 @@ function Build-Island {
   $script:avatarFallback = $win.FindName('AvatarFallback')
   $script:pillName = $win.FindName('PillName')
   $script:pillSub = $win.FindName('PillSub')
-  $script:headAva = $win.FindName('HeadAva')
   $script:headBotName = $win.FindName('HeadBotName')
-  $script:taskCount = $win.FindName('TaskCount')
-  $script:taskList = $win.FindName('TaskList')
-  $script:taskScroller = $win.FindName('TaskScroller')
+  $script:eyeL = $win.FindName('EyeL')
+  $script:eyeR = $win.FindName('EyeR')
+  $script:planLine = $win.FindName('PlanLine')
   $script:pillDot = $win.FindName('PillDot')
   $script:chevron = $win.FindName('Chevron')
   $script:chatArea = $win.FindName('ChatArea')
@@ -904,16 +870,6 @@ function Build-Island {
   $script:inputBox = $win.FindName('Input')
   $pillName.Text = $BotName
   $headBotName.Text = $BotName
-  if ((Test-Path $AvatarFile)) {
-    try {
-      $himg = New-Object System.Windows.Media.Imaging.BitmapImage
-      $himg.BeginInit(); $himg.UriSource = $AvatarFile; $himg.CacheOption = 'OnLoad'; $himg.EndInit()
-      $hbr = New-Object System.Windows.Media.ImageBrush
-      $hbr.ImageSource = $himg
-      $hbr.Stretch = 'UniformToFill'
-      $headAva.Fill = $hbr
-    } catch {}
-  }
   $ph0 = $state.size
   if (-not $ph0) { $ph0 = $PillH }
   Apply-IslandSize $ph0
@@ -981,8 +937,8 @@ function Build-Island {
     $head.Add_MouseLeftButtonDown({ $win.DragMove() })
   }
 
-  # right-click menu
-  $win.Add_MouseRightButtonUp({
+  # grid menu (also on right-click): sizes, pin, full page, voice, tasks, hide, quit
+  function Show-Menu {
     $menu = New-Object System.Windows.Controls.ContextMenu
     $sizes = @(
       @{ h = 'Compact'; s = 56 },
@@ -1021,6 +977,24 @@ function Build-Island {
     $page.Header = 'Open full page'
     $page.Add_Click({ Start-Process ($ApiBase + '/bot/' + $BotSlug) })
     $menu.Items.Add($page) | Out-Null
+    $ttsLabel = 'Read aloud: off'
+    if ($state.tts) { $ttsLabel = 'Read aloud: on' }
+    $ttsItem = New-Object System.Windows.Controls.MenuItem
+    $ttsItem.Header = $ttsLabel
+    $ttsItem.Add_Click({
+      $state.tts = -not $state.tts
+      Save-State
+      if (-not $state.tts -and $speaker) { try { $speaker.SpeakAsyncCancelAll() | Out-Null } catch {} }
+    })
+    $menu.Items.Add($ttsItem) | Out-Null
+    $addT = New-Object System.Windows.Controls.MenuItem
+    $addT.Header = 'Add input as task'
+    $addT.Add_Click({ Add-TaskFromInput })
+    $menu.Items.Add($addT) | Out-Null
+    $coll = New-Object System.Windows.Controls.MenuItem
+    $coll.Header = 'Collapse'
+    $coll.Add_Click({ Collapse-Island })
+    $menu.Items.Add($coll) | Out-Null
     $hide = New-Object System.Windows.Controls.MenuItem
     $hide.Header = 'Hide'
     $hide.Add_Click({ Hide-Island })
@@ -1031,28 +1005,11 @@ function Build-Island {
     $menu.Items.Add($quit) | Out-Null
     $menu.PlacementTarget = $win
     $menu.IsOpen = $true
-  })
+  }
+  $win.Add_MouseRightButtonUp({ Show-Menu })
 
-  $win.FindName('BtnX').Add_Click({ Collapse-Island })
-  $win.FindName('BtnPin').Add_Click({
-    $win.Topmost = -not $win.Topmost
-    $state.top = [bool]$win.Topmost
-    Save-State
-    Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ always_on_top = $state.top } | Out-Null
-  })
-  $win.FindName('BtnPage').Add_Click({ Start-Process ($ApiBase + '/bot/' + $BotSlug) })
-  $win.FindName('BtnSend').Add_Click({ Send-Chat })
   $win.FindName('BtnMic').Add_Click({ Start-Listen })
-  $win.FindName('BtnAddTask').Add_Click({ Add-TaskFromInput })
-  $spk = $win.FindName('BtnSpeak')
-  $spk.Opacity = if ($state.tts) { 1.0 } else { 0.45 }
-  $spk.Add_Click({
-    $state.tts = -not $state.tts
-    Save-State
-    $btn = $win.FindName('BtnSpeak')
-    if ($btn) { $btn.Opacity = if ($state.tts) { 1.0 } else { 0.45 } }
-    if (-not $state.tts -and $speaker) { try { $speaker.SpeakAsyncCancelAll() | Out-Null } catch {} }
-  })
+  $win.FindName('BtnGrid').Add_Click({ Show-Menu })
   $inputBox.Add_KeyDown({
     param($s, $e)
     if ($e.Key -eq 'Enter') { Send-Chat }
