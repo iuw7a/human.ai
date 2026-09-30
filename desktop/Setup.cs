@@ -11,7 +11,7 @@ namespace HumanAI
     class LoginForm : Form
     {
         TextBox _baseBox;
-        Label _codeLbl, _statusLbl;
+        Label _codeLbl, _statusLbl, _pollLbl;
         TextBox _linkBox;
         Button _openBtn, _newBtn;
         System.Windows.Forms.Timer _poll;
@@ -134,9 +134,18 @@ namespace HumanAI
             _linkBox.Multiline = true;
             Controls.Add(_linkBox);
 
+            _pollLbl = new Label();
+            _pollLbl.ForeColor = Color.FromArgb(0x52, 0x52, 0x5B);
+            _pollLbl.Font = new Font("Segoe UI", 7.5f);
+            _pollLbl.TextAlign = ContentAlignment.MiddleCenter;
+            _pollLbl.Location = new Point(24, 402);
+            _pollLbl.Size = new Size(320, 18);
+            Controls.Add(_pollLbl);
+
             _poll = new System.Windows.Forms.Timer();
             _poll.Interval = 2500;
             _poll.Tick += delegate { PollOnce(); };
+            Size = new Size(380, 492);
 
             Shown += delegate { FetchCode(); };
         }
@@ -190,6 +199,7 @@ namespace HumanAI
                 {
                     Dictionary<string, object> d = Api.Get("/api/desktop/device/poll?code=" + Uri.EscapeDataString(_code));
                     string st = Json.Str(d, "status");
+                    BeginInvoke(new Action(delegate { NotePoll(st); }));
                     if (st == "approved")
                     {
                         BeginInvoke(new Action(delegate
@@ -218,9 +228,18 @@ namespace HumanAI
                         }));
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    BeginInvoke(new Action(delegate { NotePoll("error: " + ex.Message); }));
+                }
             });
 
+        }
+
+        void NotePoll(string s)
+        {
+            if (_pollLbl != null)
+                _pollLbl.Text = "check " + DateTime.Now.ToString("HH:mm:ss") + " → " + s;
         }
     }
 
