@@ -973,6 +973,108 @@ function Add-TaskFromInput {  $title = $inputBox.Text.Trim()
   }
 }
 
+# Grid menu (also on right-click): sizes, chats, pin, page, voice, tasks, hide, quit.
+# Top-level on purpose: WPF event handlers resolve names at global scope.
+function Show-Menu {
+  $menu = New-Object System.Windows.Controls.ContextMenu
+  $sizes = @(
+    @{ h = 'Compact'; s = 56 },
+    @{ h = 'Comfortable'; s = 72 },
+    @{ h = 'Large'; s = 88 }
+  )
+  foreach ($sz in $sizes) {
+    $mi = New-Object System.Windows.Controls.MenuItem
+    $mi.Header = $sz.h
+    $mi.Tag = $sz.s
+    $mi.Add_Click({
+      param($s, $e)
+      $ns = [int]$s.Tag
+      $state.size = $ns
+      Save-State
+      Apply-IslandSize $ns
+      if (-not $expanded) { Place-Island $PillW $ns }
+      Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ size = $ns } | Out-Null
+    })
+    $menu.Items.Add($mi) | Out-Null
+  }
+  $sep = New-Object System.Windows.Controls.Separator
+  $menu.Items.Add($sep) | Out-Null
+  $newc = New-Object System.Windows.Controls.MenuItem
+  $newc.Header = 'New chat'
+  $newc.Add_Click({ New-Conversation })
+  $menu.Items.Add($newc) | Out-Null
+  $chatsItem = New-Object System.Windows.Controls.MenuItem
+  $chatsItem.Header = 'Recent chats'
+  try {
+    $list = Api-Get ('/api/bots/' + $BotSlug + '/conversations')
+    $convs = @()
+    if ($list -and $list.conversations) { $convs = @($list.conversations | Select-Object -First 8) }
+    if ($convs.Count -eq 0) {
+      $none = New-Object System.Windows.Controls.MenuItem
+      $none.Header = '(no chats yet)'
+      $none.IsEnabled = $false
+      $chatsItem.Items.Add($none) | Out-Null
+    }
+    foreach ($cv in $convs) {
+      $ci = New-Object System.Windows.Controls.MenuItem
+      $t = [string]$cv.title
+      if ($t -eq '' -or $t -eq 'New conversation') {
+        try { $t = ([DateTime]$cv.updated_at).ToString('g') } catch { $t = [string]$cv.id }
+      }
+      if ($t.Length -gt 32) { $t = $t.Substring(0, 32) + '…' }
+      if ([string]$cv.id -eq $script:convId) { $t = '● ' + $t }
+      $ci.Header = $t
+      $ci.Tag = [string]$cv.id
+      $ci.Add_Click({ param($s, $e); Switch-Conversation ([string]$s.Tag) })
+      $chatsItem.Items.Add($ci) | Out-Null
+    }
+  } catch {}
+  $menu.Items.Add($chatsItem) | Out-Null
+  $pinLabel = 'Pin above windows'
+  if ($win.Topmost) { $pinLabel = 'Unpin' }
+  $pin = New-Object System.Windows.Controls.MenuItem
+  $pin.Header = $pinLabel
+  $pin.Add_Click({
+    $win.Topmost = -not $win.Topmost
+    $state.top = [bool]$win.Topmost
+    Save-State
+    Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ always_on_top = $state.top } | Out-Null
+  })
+  $menu.Items.Add($pin) | Out-Null
+  $page = New-Object System.Windows.Controls.MenuItem
+  $page.Header = 'Open full page'
+  $page.Add_Click({ Start-Process ($ApiBase + '/bot/' + $BotSlug) })
+  $menu.Items.Add($page) | Out-Null
+  $ttsLabel = 'Read aloud: off'
+  if ($state.tts) { $ttsLabel = 'Read aloud: on' }
+  $ttsItem = New-Object System.Windows.Controls.MenuItem
+  $ttsItem.Header = $ttsLabel
+  $ttsItem.Add_Click({
+    $state.tts = -not $state.tts
+    Save-State
+    if (-not $state.tts -and $speaker) { try { $speaker.SpeakAsyncCancelAll() | Out-Null } catch {} }
+  })
+  $menu.Items.Add($ttsItem) | Out-Null
+  $addT = New-Object System.Windows.Controls.MenuItem
+  $addT.Header = 'Add input as task'
+  $addT.Add_Click({ Add-TaskFromInput })
+  $menu.Items.Add($addT) | Out-Null
+  $coll = New-Object System.Windows.Controls.MenuItem
+  $coll.Header = 'Collapse'
+  $coll.Add_Click({ Collapse-Island })
+  $menu.Items.Add($coll) | Out-Null
+  $hide = New-Object System.Windows.Controls.MenuItem
+  $hide.Header = 'Hide'
+  $hide.Add_Click({ Hide-Island })
+  $menu.Items.Add($hide) | Out-Null
+  $quit = New-Object System.Windows.Controls.MenuItem
+  $quit.Header = 'Quit'
+  $quit.Add_Click({ [System.Windows.Application]::Current.Shutdown() })
+  $menu.Items.Add($quit) | Out-Null
+  $menu.PlacementTarget = $win
+  $menu.IsOpen = $true
+}
+
 function Build-Island {
   $r = New-Object System.Xml.XmlNodeReader $islandXaml
   $script:win = [Windows.Markup.XamlReader]::Load($r)
@@ -1070,106 +1172,6 @@ function Build-Island {
     $head.Add_MouseLeftButtonDown({ $win.DragMove() })
   }
 
-  # grid menu (also on right-click): sizes, pin, full page, voice, tasks, hide, quit
-  function Show-Menu {
-    $menu = New-Object System.Windows.Controls.ContextMenu
-    $sizes = @(
-      @{ h = 'Compact'; s = 56 },
-      @{ h = 'Comfortable'; s = 72 },
-      @{ h = 'Large'; s = 88 }
-    )
-    foreach ($sz in $sizes) {
-      $mi = New-Object System.Windows.Controls.MenuItem
-      $mi.Header = $sz.h
-      $mi.Tag = $sz.s
-      $mi.Add_Click({
-        param($s, $e)
-        $ns = [int]$s.Tag
-        $state.size = $ns
-        Save-State
-        Apply-IslandSize $ns
-        if (-not $expanded) { Place-Island $PillW $ns }
-        Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ size = $ns } | Out-Null
-      })
-      $menu.Items.Add($mi) | Out-Null
-    }
-    $sep = New-Object System.Windows.Controls.Separator
-    $menu.Items.Add($sep) | Out-Null
-    $newc = New-Object System.Windows.Controls.MenuItem
-    $newc.Header = 'New chat'
-    $newc.Add_Click({ New-Conversation })
-    $menu.Items.Add($newc) | Out-Null
-    $chatsItem = New-Object System.Windows.Controls.MenuItem
-    $chatsItem.Header = 'Recent chats'
-    try {
-      $list = Api-Get ('/api/bots/' + $BotSlug + '/conversations')
-      $convs = @()
-      if ($list -and $list.conversations) { $convs = @($list.conversations | Select-Object -First 8) }
-      if ($convs.Count -eq 0) {
-        $none = New-Object System.Windows.Controls.MenuItem
-        $none.Header = '(no chats yet)'
-        $none.IsEnabled = $false
-        $chatsItem.Items.Add($none) | Out-Null
-      }
-      foreach ($cv in $convs) {
-        $ci = New-Object System.Windows.Controls.MenuItem
-        $t = [string]$cv.title
-        if ($t -eq '' -or $t -eq 'New conversation') {
-          try { $t = ([DateTime]$cv.updated_at).ToString('g') } catch { $t = [string]$cv.id }
-        }
-        if ($t.Length -gt 32) { $t = $t.Substring(0, 32) + '…' }
-        if ([string]$cv.id -eq $script:convId) { $t = '● ' + $t }
-        $ci.Header = $t
-        $ci.Tag = [string]$cv.id
-        $ci.Add_Click({ param($s, $e); Switch-Conversation ([string]$s.Tag) })
-        $chatsItem.Items.Add($ci) | Out-Null
-      }
-    } catch {}
-    $menu.Items.Add($chatsItem) | Out-Null
-    $pinLabel = 'Pin above windows'
-    if ($win.Topmost) { $pinLabel = 'Unpin' }
-    $pin = New-Object System.Windows.Controls.MenuItem
-    $pin.Header = $pinLabel
-    $pin.Add_Click({
-      $win.Topmost = -not $win.Topmost
-      $state.top = [bool]$win.Topmost
-      Save-State
-      Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ always_on_top = $state.top } | Out-Null
-    })
-    $menu.Items.Add($pin) | Out-Null
-    $page = New-Object System.Windows.Controls.MenuItem
-    $page.Header = 'Open full page'
-    $page.Add_Click({ Start-Process ($ApiBase + '/bot/' + $BotSlug) })
-    $menu.Items.Add($page) | Out-Null
-    $ttsLabel = 'Read aloud: off'
-    if ($state.tts) { $ttsLabel = 'Read aloud: on' }
-    $ttsItem = New-Object System.Windows.Controls.MenuItem
-    $ttsItem.Header = $ttsLabel
-    $ttsItem.Add_Click({
-      $state.tts = -not $state.tts
-      Save-State
-      if (-not $state.tts -and $speaker) { try { $speaker.SpeakAsyncCancelAll() | Out-Null } catch {} }
-    })
-    $menu.Items.Add($ttsItem) | Out-Null
-    $addT = New-Object System.Windows.Controls.MenuItem
-    $addT.Header = 'Add input as task'
-    $addT.Add_Click({ Add-TaskFromInput })
-    $menu.Items.Add($addT) | Out-Null
-    $coll = New-Object System.Windows.Controls.MenuItem
-    $coll.Header = 'Collapse'
-    $coll.Add_Click({ Collapse-Island })
-    $menu.Items.Add($coll) | Out-Null
-    $hide = New-Object System.Windows.Controls.MenuItem
-    $hide.Header = 'Hide'
-    $hide.Add_Click({ Hide-Island })
-    $menu.Items.Add($hide) | Out-Null
-    $quit = New-Object System.Windows.Controls.MenuItem
-    $quit.Header = 'Quit'
-    $quit.Add_Click({ [System.Windows.Application]::Current.Shutdown() })
-    $menu.Items.Add($quit) | Out-Null
-    $menu.PlacementTarget = $win
-    $menu.IsOpen = $true
-  }
   $win.Add_MouseRightButtonUp({ Show-Menu })
 
   $win.FindName('BtnMic').Add_Click({ Start-Listen })
