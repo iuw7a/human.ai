@@ -68,6 +68,91 @@ export interface BotTurnInput {
   messages: BotBodyMessage[];
 }
 
+export const BOT_TASK_TOOLS = [
+  {
+    name: "bot_add_task",
+    description: "Add a task/reminder to the owner's task list. Use when asked to remind, remember to do, or add a todo.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short task title" },
+        due_at: { type: "string", description: "Optional ISO datetime when it is due" },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "bot_list_tasks",
+    description: "List open tasks with their ids and due dates.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "bot_complete_task",
+    description: "Mark a task done by its id (from bot_list_tasks) or by matching title.",
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string" }, title: { type: "string" } },
+    },
+  },
+];
+
+async function executeBotTaskTool(
+  bot: Bot,
+  ownerId: string,
+  name: string,
+  args: Record<string, unknown>
+): Promise<string> {
+  const admin = createAdminSupabase();
+  if (name === "bot_add_task") {
+    const title = String(args.title ?? "").trim().slice(0, 200);
+    if (!title) return "Missing title.";
+    let due: string | null = null;
+    if (args.due_at) {
+      const d = new Date(String(args.due_at));
+      if (!Number.isNaN(d.getTime())) due = d.toISOString();
+    }
+    const { error } = await admin
+      .from("bot_tasks")
+      .insert({ bot_id: bot.id, user_id: ownerId, title, due_at: due });
+    if (error) return "Could not save task (database not set up).";
+    return `Task added: "${title}"${due ? ` (due ${due})` : ""}. Confirm briefly to the user.`;
+  }
+  if (name === "bot_list_tasks") {
+    const { data } = await admin
+      .from("bot_tasks")
+      .select("id,title,done,due_at")
+      .eq("bot_id", bot.id)
+      .eq("done", false)
+      .order("created_at", { ascending: true })
+      .limit(30);
+    if (!data || data.length === 0) return "No open tasks.";
+    return data.map((t) => `- [${t.id}] ${t.title}${t.due_at ? ` (due ${t.due_at})` : ""}`).join("\n");
+  }
+  if (name === "bot_complete_task") {
+    const id = String(args.id ?? "");
+    const title = String(args.title ?? "").trim();
+    if (id) {
+      await admin.from("bot_tasks").update({ done: true }).eq("id", id).eq("bot_id", bot.id);
+      return "Task marked done.";
+    }
+    if (title) {
+      const { data } = await admin
+        .from("bot_tasks")
+        .select("id,title")
+        .eq("bot_id", bot.id)
+        .eq("done", false)
+        .ilike("title", `%${title.slice(0, 100)}%`)
+        .limit(1)
+        .maybeSingle();
+      if (!data) return "No matching open task found.";
+      await admin.from("bot_tasks").update({ done: true }).eq("id", data.id);
+      return `Marked done: "${data.title}".`;
+    }
+    return "Provide an id or title.";
+  }
+  return "Unknown tool.";
+}
+
 /**
  * Run one streaming agentic turn for a Bot. Emits SSE `data:` lines
  * ({token}|{error}|{mcp_used}|[DONE]) to `send`. Tools limited to the Bot's
@@ -113,11 +198,16 @@ export async function runBotTurn(
     // optional
   }
 
-  const systemContent = buildBotSystemPrompt(bot, botMemories, userMemories);
+  const systemContent =
+    buildBotSystemPrompt(bot, botMemories, userMemories) +
+    "\n\nYou manage the owner's task list with bot_add_task, bot_list_tasks and bot_complete_task. When asked to remind, add a todo, or complete something, call the matching tool (use ISO datetimes for due dates when a time is mentioned), then confirm briefly.";
 
-  // Tools: built-in web search (if enabled) + owner's MCP tools filtered to enabled servers.
+  // Tools: task tools (always) + built-in web search (if enabled) + owner's MCP tools filtered to enabled servers.
   const mcpByOpenName = new Map<string, { serverId: string; serverName: string; tool: string }>();
   const mcpTools: { name: string; description: string; parameters: Record<string, unknown> }[] = [];
+  for (const t of BOT_TASK_TOOLS) {
+    mcpTools.push({ name: t.name, description: t.description, parameters: t.parameters });
+  }
   if (bot.tools.web_search && isSearchEnabled()) {
     mcpTools.push({ ...WEB_SEARCH_TOOL });
   }
@@ -247,6 +337,16 @@ export async function runBotTurn(
             return { tc, result: `Answer the user NOW using these results. Never describe this tool call.\n\n${out}` };
           } catch (e) {
             return { tc, result: e instanceof Error ? e.message : "Web search failed." };
+          }
+        }
+        if (tc.name === "bot_add_task" || tc.name === "bot_list_tasks" || tc.name === "bot_complete_task") {
+          try {
+            const out = await executeBotTaskTool(bot, ownerId, tc.name, args);
+            used.push({ server: "Tasks", tool: tc.name.replace("bot_", "") });
+            gathered.push(out);
+            return { tc, result: `Answer the user NOW using this result. Never describe this tool call.\n\n${out}` };
+          } catch (e) {
+            return { tc, result: e instanceof Error ? e.message : "Task action failed." };
           }
         }
         const def = mcpByOpenName.get(tc.name);

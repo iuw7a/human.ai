@@ -147,8 +147,10 @@ function Speak($text) {
           <TextBlock Name="AvatarFallback" Foreground="White" FontWeight="Bold"
             HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
         </Grid>
-        <TextBlock Grid.Column="1" Name="PillName" Foreground="White" FontWeight="SemiBold" FontSize="13"
-          Margin="9,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <StackPanel Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center">
+          <TextBlock Name="PillName" Foreground="White" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis" />
+          <TextBlock Name="PillSub" Foreground="#71717a" FontSize="10" Text="Ask for anything…" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
         <Ellipse Grid.Column="2" Name="PillDot" Width="8" Height="8" Fill="#10b981" Margin="8,0,2,0" />
         <TextBlock Grid.Column="3" Name="Chevron" Foreground="#71717a" FontSize="12" Text="v"
           Margin="0,0,12,0" VerticalAlignment="Center" />
@@ -159,10 +161,14 @@ function Speak($text) {
           <RowDefinition Height="*" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Border Grid.Row="0" Background="#00000000" Padding="14,6,14,8" Name="HeadDrag">
           <DockPanel>
+            <Ellipse Name="HeadAva" Width="24" Height="24" DockPanel.Dock="Left" Margin="0,0,8,0" />
             <StackPanel VerticalAlignment="Center">
+              <TextBlock Name="HeadBotName" Foreground="White" FontWeight="SemiBold" FontSize="12" />
               <TextBlock Name="HeadStatus" Foreground="#a1a1aa" FontSize="11" Text="Idle" />
             </StackPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
@@ -178,7 +184,14 @@ function Speak($text) {
         <TextBlock Grid.Row="1" Name="HintLine" Foreground="#52525b" FontSize="13"
           HorizontalAlignment="Center" VerticalAlignment="Center" Text="Ask for anything…" IsHitTestVisible="False" />
         <TextBlock Grid.Row="2" Name="StateLine" Foreground="#71717a" FontSize="11" Margin="14,2" Text="" Visibility="Collapsed" />
-        <Grid Grid.Row="3" Margin="12,6,12,12">
+        <DockPanel Grid.Row="3" Margin="14,4,14,2" LastChildFill="False">
+          <TextBlock Name="TaskCount" Foreground="#71717a" FontSize="11" Text="Tasks" VerticalAlignment="Center" />
+          <Button Name="BtnAddTask" DockPanel.Dock="Right" Content="+ Task" ToolTip="Add input text as task" Background="Transparent" Foreground="#71717a" BorderThickness="0" FontSize="11" Padding="6,2" Cursor="Hand" />
+        </DockPanel>
+        <ScrollViewer Grid.Row="4" Margin="12,0,12,2" MaxHeight="150" Name="TaskScroller" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+          <StackPanel Name="TaskList" />
+        </ScrollViewer>
+        <Grid Grid.Row="5" Margin="12,6,12,12">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
@@ -220,7 +233,14 @@ $avatarFace = $null
 $avatarBrush = $null
 $avatarFallback = $null
 $pillName = $null
+$pillSub = $null
 $pillDot = $null
+$headAva = $null
+$headBotName = $null
+$taskCount = $null
+$taskList = $null
+$taskScroller = $null
+$openTasks = @()
 $chevron = $null
 $chatArea = $null
 $headStatus = $null
@@ -399,8 +419,18 @@ function Expand-Island($instant) {
   Save-State
   Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ collapsed = $false } | Out-Null
   Ensure-Conversation
+  Refresh-Tasks
   $inputBox.Focus() | Out-Null
 }
+
+$taskTimer = New-Object System.Windows.Threading.DispatcherTimer
+$taskTimer.Interval = [TimeSpan]::FromMinutes(1)
+$taskTimer.Add_Tick({
+  try {
+    Refresh-Tasks
+    Check-DueTasks
+  } catch {}
+})
 
 function Collapse-Island {
   if (-not $expanded) { return }
@@ -678,6 +708,106 @@ function Start-Listen {
   $script:listenTimer.Start()
 }
 
+function Refresh-Tasks {
+  try {
+    $t = Api-Get ('/api/bots/' + $BotSlug + '/tasks')
+    if (-not $t -or -not $t.tasks) { return }
+    $script:openTasks = @($t.tasks | Where-Object { -not $_.done })
+    $win.Dispatcher.Invoke([action]{
+      $taskList.Children.Clear()
+      foreach ($task in $script:openTasks) {
+        $row = New-Object System.Windows.Controls.DockPanel
+        $row.Margin = '0,0,0,4'
+        $btn = New-Object System.Windows.Controls.Button
+        $btn.Content = '○'
+        $btn.Tag = [string]$task.id
+        $btn.Background = 'Transparent'
+        $btn.Foreground = '#71717a'
+        $btn.BorderThickness = '0'
+        $btn.FontSize = 14
+        $btn.Padding = '2,0,6,0'
+        $btn.Cursor = 'Hand'
+        $btn.Add_Click({
+          param($s, $e)
+          Api-Patch ('/api/bots/' + $BotSlug + '/tasks') @{ id = [string]$s.Tag; done = $true } | Out-Null
+          Refresh-Tasks
+        })
+        $txt = New-Object System.Windows.Controls.StackPanel
+        $tt = New-Object System.Windows.Controls.TextBlock
+        $tt.Text = [string]$task.title
+        $tt.Foreground = 'White'
+        $tt.FontSize = 12
+        $tt.TextWrapping = 'Wrap'
+        $txt.Children.Add($tt) | Out-Null
+        if ($task.due_at) {
+          try {
+            $due = [DateTime]$task.due_at
+            $dd = New-Object System.Windows.Controls.TextBlock
+            $dd.Text = $due.ToString('g')
+            $dd.Foreground = '#71717a'
+            $dd.FontSize = 10
+            $txt.Children.Add($dd) | Out-Null
+          } catch {}
+        }
+        $row.Children.Add($btn) | Out-Null
+        $row.Children.Add($txt) | Out-Null
+        $taskList.Children.Add($row) | Out-Null
+      }
+      $n = $script:openTasks.Count
+      if ($n -gt 0) {
+        $taskCount.Text = 'Tasks · ' + $n + ' open'
+        $taskScroller.Visibility = 'Visible'
+        $withDue = @($script:openTasks | Where-Object { $_.due_at } | Select-Object -First 1)
+        if ($withDue.Count -gt 0) {
+          $dt = [string]$withDue[0].title
+          $pillSub.Text = 'Due: ' + $dt.Substring(0, [Math]::Min(26, $dt.Length))
+        } else {
+          $ft = [string]$script:openTasks[0].title
+          $pillSub.Text = $ft.Substring(0, [Math]::Min(26, $ft.Length))
+        }
+      } else {
+        $taskCount.Text = 'Tasks'
+        $taskScroller.Visibility = 'Collapsed'
+        $pillSub.Text = 'Ask for anything…'
+      }
+    })
+  } catch {}
+}
+
+function Check-DueTasks {
+  try {
+    $t = Api-Get ('/api/bots/' + $BotSlug + '/tasks')
+    if (-not $t -or -not $t.tasks) { return }
+    $now = Get-Date
+    foreach ($task in @($t.tasks)) {
+      if ($task.done -or $task.notified -or -not $task.due_at) { continue }
+      try { $due = [DateTime]$task.due_at } catch { continue }
+      if ($due -le $now) {
+        Api-Patch ('/api/bots/' + $BotSlug + '/tasks') @{ id = [string]$task.id; notified = $true } | Out-Null
+        Set-Status 'Reminder' 'attention'
+        Notify-Attention
+        try { Speak ('Reminder: ' + [string]$task.title) } catch {}
+      }
+    }
+  } catch {}
+}
+
+function Add-TaskFromInput {
+  $title = $inputBox.Text.Trim()
+  if ($title -eq '') {
+    Set-Status 'Type a task title first' 'attention'
+    return
+  }
+  $created = Api-Post ('/api/bots/' + $BotSlug + '/tasks') @{ title = $title }
+  if ($created -and $created.task) {
+    $inputBox.Text = ''
+    Refresh-Tasks
+    Set-Status 'Task added' 'idle'
+  } else {
+    Set-Status 'Could not add task' 'attention'
+  }
+}
+
 function Build-Island {
   $r = New-Object System.Xml.XmlNodeReader $islandXaml
   $script:win = [Windows.Markup.XamlReader]::Load($r)
@@ -690,6 +820,12 @@ function Build-Island {
   $script:avatarBrush = $null
   $script:avatarFallback = $win.FindName('AvatarFallback')
   $script:pillName = $win.FindName('PillName')
+  $script:pillSub = $win.FindName('PillSub')
+  $script:headAva = $win.FindName('HeadAva')
+  $script:headBotName = $win.FindName('HeadBotName')
+  $script:taskCount = $win.FindName('TaskCount')
+  $script:taskList = $win.FindName('TaskList')
+  $script:taskScroller = $win.FindName('TaskScroller')
   $script:pillDot = $win.FindName('PillDot')
   $script:chevron = $win.FindName('Chevron')
   $script:chatArea = $win.FindName('ChatArea')
@@ -699,6 +835,17 @@ function Build-Island {
   $script:stateLine = $win.FindName('StateLine')
   $script:inputBox = $win.FindName('Input')
   $pillName.Text = $BotName
+  $headBotName.Text = $BotName
+  if ((Test-Path $AvatarFile)) {
+    try {
+      $himg = New-Object System.Windows.Media.Imaging.BitmapImage
+      $himg.BeginInit(); $himg.UriSource = $AvatarFile; $himg.CacheOption = 'OnLoad'; $himg.EndInit()
+      $hbr = New-Object System.Windows.Media.ImageBrush
+      $hbr.ImageSource = $himg
+      $hbr.Stretch = 'UniformToFill'
+      $headAva.Fill = $hbr
+    } catch {}
+  }
   $ph0 = $state.size
   if (-not $ph0) { $ph0 = $PillH }
   Apply-IslandSize $ph0
@@ -828,6 +975,7 @@ function Build-Island {
   $win.FindName('BtnPage').Add_Click({ Start-Process ($ApiBase + '/bot/' + $BotSlug) })
   $win.FindName('BtnSend').Add_Click({ Send-Chat })
   $win.FindName('BtnMic').Add_Click({ Start-Listen })
+  $win.FindName('BtnAddTask').Add_Click({ Add-TaskFromInput })
   $spk = $win.FindName('BtnSpeak')
   $spk.Opacity = if ($state.tts) { 1.0 } else { 0.45 }
   $spk.Add_Click({
@@ -870,6 +1018,7 @@ if ($state.hidden) {
 }
 $win.Show()
 Write-BootLog 'shown'
+$taskTimer.Start()
 if (-not $state.collapsed) {
   Expand-Island $true
 }

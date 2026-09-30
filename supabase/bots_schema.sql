@@ -142,6 +142,11 @@ begin
   ) then
     create index bot_images_bot_idx on public.bot_images(bot_id, position);
   end if;
+  if not exists (
+    select 1 from pg_indexes where schemaname = 'public' and indexname = 'bot_tasks_bot_idx'
+  ) then
+    create index bot_tasks_bot_idx on public.bot_tasks(bot_id, done, created_at);
+  end if;
 end $$;
 
 -- Public bucket for bot avatars (uploads go through the API with service role)
@@ -157,6 +162,7 @@ alter table public.bot_conversations enable row level security;
 alter table public.bot_messages enable row level security;
 alter table public.bot_memories enable row level security;
 alter table public.bot_images enable row level security;
+alter table public.bot_tasks enable row level security;
 
 drop policy if exists "own bots" on public.bots;
 create policy "own bots" on public.bots
@@ -177,3 +183,30 @@ create policy "own bot memories" on public.bot_memories
 drop policy if exists "own bot images" on public.bot_images;
 create policy "own bot images" on public.bot_images
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "own bot tasks" on public.bot_tasks;
+create policy "own bot tasks" on public.bot_tasks
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Bot tasks (reminders/todos per Bot; companion polls due items)
+create table if not exists public.bot_tasks (
+  id uuid primary key default gen_random_uuid(),
+  bot_id uuid not null references public.bots(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  done boolean not null default false,
+  due_at timestamptz,
+  notified boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.bot_tasks
+  add column if not exists bot_id uuid,
+  add column if not exists user_id uuid,
+  add column if not exists title text,
+  add column if not exists done boolean not null default false,
+  add column if not exists due_at timestamptz,
+  add column if not exists notified boolean not null default false,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
