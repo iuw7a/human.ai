@@ -1,7 +1,10 @@
-/** Builds the Human Bot Desktop companion (.ps1) — Dynamic Island style.
- *  Top-center pill (avatar + name) that spring-expands downward into a chat
- *  panel. PowerShell 5.1 safe. States: idle/listening/thinking/responding/
- *  working/attention. Position persisted; autostart via companion .cmd.
+/** Builds the Human Bot Desktop companion (.ps1) — Dynamic Island edition.
+ *  Premium floating-island language (matches the Human AI web interface):
+ *  small top-center pill (avatar + live status + dot) that spring-expands
+ *  into a chat panel with floating message cards, task cards and a large
+ *  rounded composer. PowerShell 5.1 safe. States: idle/thinking/responding/
+ *  listening/speaking/working/done/attention. Position persisted; autostart
+ *  via companion .cmd.
  */
 
 export interface CompanionScriptInput {
@@ -118,9 +121,11 @@ function Api-Patch($path, $body) {
 $speaker = $null
 try { $speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer } catch {}
 function Speak($text) {
-  if (-not $state.tts) { return }
-  if (-not $speaker) { return }
-  try { $speaker.SpeakAsyncCancelAll() | Out-Null; $speaker.SpeakAsync($text) | Out-Null } catch {}
+  if (-not $state.tts) { return '' }
+  if (-not $speaker) { return '' }
+  $t = [string]$text
+  if ($t -eq '') { return '' }
+  try { $speaker.SpeakAsyncCancelAll() | Out-Null; $speaker.SpeakAsync($t) | Out-Null; return 'speaking' } catch { return '' }
 }
 
 # ---------- island window ----------
@@ -129,7 +134,7 @@ function Speak($text) {
   WindowStyle="None" AllowsTransparency="True" Background="Transparent"
   ShowInTaskbar="False" Title="__NAME__">
   <Border Name="Island" CornerRadius="28" Background="#0C0C10F2"
-    BorderBrush="#33333B" BorderThickness="1">
+    BorderBrush="#26262C" BorderThickness="1">
     <Border.Effect>
       <DropShadowEffect Color="Black" Opacity="0.55" ShadowDepth="6" BlurRadius="22" />
     </Border.Effect>
@@ -164,7 +169,8 @@ function Speak($text) {
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Background="#00000000" Padding="16,12,16,10" Name="HeadDrag">
+        <Border Grid.Row="0" Background="#00000000" Padding="16,12,16,10" Name="HeadDrag"
+          BorderBrush="#26262C" BorderThickness="0,0,0,1">
           <DockPanel>
             <Ellipse Name="HeadAva" Width="40" Height="40" DockPanel.Dock="Left" Margin="0,0,10,0" />
             <StackPanel VerticalAlignment="Center">
@@ -198,24 +204,24 @@ function Speak($text) {
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <TextBox Name="Input" Grid.Column="0" Background="#16161B" Foreground="White"
-            BorderBrush="#2E2E35" BorderThickness="1" Padding="12,10" FontSize="13"
+          <TextBox Name="Input" Grid.Column="0" Background="#0E0E12" Foreground="White"
+            BorderBrush="#2E2E35" BorderThickness="1" Padding="14,11" FontSize="13"
             VerticalContentAlignment="Center">
             <TextBox.Resources>
-              <Style TargetType="Border"><Setter Property="CornerRadius" Value="16" /></Style>
+              <Style TargetType="Border"><Setter Property="CornerRadius" Value="20" /></Style>
             </TextBox.Resources>
           </TextBox>
           <Button Name="BtnMic" Grid.Column="1" Content="Mic" ToolTip="Voice input" Margin="6,0,0,0" FontSize="11"
-            Background="#16161B" Foreground="White" BorderBrush="#2E2E35" Width="44" Cursor="Hand">
-            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="16" /></Style></Button.Resources>
+            Background="#15151B" Foreground="White" BorderBrush="#2E2E35" Width="44" Cursor="Hand">
+            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="20" /></Style></Button.Resources>
           </Button>
           <Button Name="BtnSpeak" Grid.Column="2" Content="Read" ToolTip="Read aloud" Margin="6,0,0,0" FontSize="11"
-            Background="#16161B" Foreground="White" BorderBrush="#2E2E35" Width="44" Cursor="Hand">
-            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="16" /></Style></Button.Resources>
+            Background="#15151B" Foreground="White" BorderBrush="#2E2E35" Width="44" Cursor="Hand">
+            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="20" /></Style></Button.Resources>
           </Button>
           <Button Name="BtnSend" Grid.Column="3" Content="Send" Margin="6,0,0,0" FontSize="12" FontWeight="SemiBold"
-            Background="#e5484d" Foreground="White" BorderThickness="0" Padding="14,0" Cursor="Hand">
-            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="16" /></Style></Button.Resources>
+            Background="#e5484d" Foreground="White" BorderThickness="0" Padding="16,0" Cursor="Hand">
+            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="20" /></Style></Button.Resources>
           </Button>
         </Grid>
       </Grid>
@@ -253,6 +259,7 @@ $expanded = $false
 $miniHidden = $false
 $pillCurH = 0
 $uiState = 'idle'
+$lastPillSub = $null
 $historyList = New-Object System.Collections.ArrayList
 
 function Screen-CenterX {
@@ -337,13 +344,26 @@ function Set-Status($text, $botState) {
       $stateLine.Visibility = 'Visible'
       $stateLine.Text = $text
     }
+    # Collapsed pill mirrors the live status; restore the previous
+    # pill line (task hint) once the turn is over.
+    if ($botState -eq 'idle' -or $botState -eq 'done') {
+      if ($script:lastPillSub -ne $null -and $script:lastPillSub -ne '') { $pillSub.Text = $script:lastPillSub }
+      $script:lastPillSub = $null
+    } elseif ($script:lastPillSub -eq $null) {
+      $script:lastPillSub = $pillSub.Text
+      $pillSub.Text = $text
+    } else {
+      $pillSub.Text = $text
+    }
     if ($botState -eq 'listening') { $pillDot.Fill = To-Brush '#10b981' }
     elseif ($botState -eq 'thinking' -or $botState -eq 'responding') { $pillDot.Fill = To-Brush '#e5484d' }
+    elseif ($botState -eq 'speaking') { $pillDot.Fill = To-Brush '#e5484d' }
     elseif ($botState -eq 'working') { $pillDot.Fill = To-Brush '#f59e0b' }
+    elseif ($botState -eq 'done') { $pillDot.Fill = To-Brush '#34d399' }
     elseif ($botState -eq 'attention') { $pillDot.Fill = To-Brush '#e5484d' }
     else { $pillDot.Fill = To-Brush '#10b981' }
   })
-  if ($botState -eq 'thinking' -or $botState -eq 'responding' -or $botState -eq 'working') {
+  if ($botState -eq 'thinking' -or $botState -eq 'responding' -or $botState -eq 'working' -or $botState -eq 'speaking') {
     Start-AvatarPulse
   } else {
     Stop-AvatarPulse
@@ -370,8 +390,8 @@ $dotsTimer.Add_Tick({
   if ($script:uiState -eq 'listening') {
     $waveN = ($waveN + 1) % $waveFrames.Count
     $w = $waveFrames[$waveN]
-    $headStatus.Text = $w + ' Listening'
-    $stateLine.Text = $w + ' Listening — tap Mic to stop'
+    $headStatus.Text = $w + ' Listening...'
+    $stateLine.Text = $w + ' Listening... — tap Mic to stop'
   } else {
     $dotsN = ($dotsN + 1) % 4
     $d = ''
@@ -402,6 +422,26 @@ function Notify-Attention {
   $attnTimer.Start()
 }
 
+# "Done" flash after a finished turn (speaking time is estimated from
+# the reply length so the pill reads Speaking... while TTS talks).
+$doneTimer = New-Object System.Windows.Threading.DispatcherTimer
+$doneTimer.Add_Tick({
+  $doneTimer.Stop()
+  if ($script:uiState -eq 'speaking') {
+    Set-Status 'Done' 'done'
+    $doneTimer.Interval = [TimeSpan]::FromMilliseconds(1800)
+    $doneTimer.Start()
+  } else {
+    Set-Status 'Idle' 'idle'
+  }
+})
+function Flash-Done($extraSecs) {
+  try { $doneTimer.Stop() } catch {}
+  $ms = 1800 + ([int]$extraSecs * 1000)
+  $doneTimer.Interval = [TimeSpan]::FromMilliseconds($ms)
+  $doneTimer.Start()
+}
+
 function Expand-Island($instant) {
   if ($expanded) { return }
   if ($script:miniHidden) { Restore-Island }
@@ -413,7 +453,7 @@ function Expand-Island($instant) {
     Place-Island $PanelW $PanelH
     $chatArea.Opacity = 1
   } else {
-    Start-Anim $PanelW $PanelH 260 'back' $null
+    Start-Anim $PanelW $PanelH 300 'back' $null
   }
   $state.collapsed = $false
   Save-State
@@ -438,7 +478,7 @@ function Collapse-Island {
   $chevron.Text = 'v'
   $ph = $pillCurH
   if (-not $ph) { $ph = $PillH }
-  Start-Anim $PillW $ph 200 'in' {
+  Start-Anim $PillW $ph 220 'in' {
     $chatArea.Visibility = 'Collapsed'
     $chatArea.Opacity = 0
     Set-Status 'Idle' 'idle'
@@ -488,15 +528,17 @@ function Add-Message($role, $text) {
     $hint = $win.FindName('HintLine')
     if ($hint) { $hint.Visibility = 'Collapsed' }
     $b = New-Object System.Windows.Controls.Border
-    if ($role -eq 'user') { $b.CornerRadius = New-Object System.Windows.CornerRadius(14,14,5,14) } else { $b.CornerRadius = New-Object System.Windows.CornerRadius(14,14,14,5) }
-    $b.Padding = '11,8'
+    if ($role -eq 'user') { $b.CornerRadius = New-Object System.Windows.CornerRadius(18,18,6,18) } else { $b.CornerRadius = New-Object System.Windows.CornerRadius(18,18,18,6) }
+    $b.Padding = '12,10'
     $b.Margin = '0,0,0,8'
-    $b.MaxWidth = 300
+    $b.MaxWidth = 312
     if ($role -eq 'user') {
-      $b.Background = To-Brush '#26262c'
+      $b.Background = To-Brush '#15151B'
+      $b.BorderBrush = To-Brush '#2E2E35'
+      $b.BorderThickness = '1'
       $b.HorizontalAlignment = 'Right'
     } else {
-      $b.Background = To-Brush '#131316'
+      $b.Background = To-Brush '#101014'
       $b.BorderBrush = To-Brush '#26262c'
       $b.BorderThickness = '1'
       $b.HorizontalAlignment = 'Left'
@@ -546,14 +588,14 @@ function Send-Chat {
   [void]$historyList.Add(@{ role = 'user'; content = $text })
   $sync.stop = $false
   $sync.busy = $true
-  Set-Status 'Thinking' 'thinking'
+  Set-Status 'Thinking...' 'thinking'
   Write-BootLog 'm-status'
   $msgs = @()
   foreach ($m in ($historyList | Select-Object -Last 20)) {
     $msgs += @{ role = $m.role; content = $m.content }
   }
   $body = @{ conversation_id = $convId; messages = $msgs } | ConvertTo-Json -Depth 6
-  $botBg = To-Brush '#131316'
+  $botBg = To-Brush '#101014'
   $botBd = To-Brush '#26262c'
   try { $botBg.Freeze(); $botBd.Freeze() } catch {}
   Write-BootLog 'm-body'
@@ -576,12 +618,12 @@ function Send-Chat {
       $reader = New-Object System.IO.StreamReader($stream)
       $full = ''
       $win.Dispatcher.Invoke([action]{
-        $headStatus.Text = 'Responding'
+        $headStatus.Text = 'Generating...'
         $b = New-Object System.Windows.Controls.Border
-        $b.CornerRadius = New-Object System.Windows.CornerRadius(14,14,14,5)
-        $b.Padding = '11,8'
+        $b.CornerRadius = New-Object System.Windows.CornerRadius(18,18,18,6)
+        $b.Padding = '12,10'
         $b.Margin = '0,0,0,8'
-        $b.MaxWidth = 300
+        $b.MaxWidth = 312
         $b.Background = $bgBrush
         $b.BorderBrush = $bdBrush
         $b.BorderThickness = '1'
@@ -609,6 +651,7 @@ function Send-Chat {
         }
         if ($j.token) {
           $full += $j.token
+          $sync.full = $full
           $win.Dispatcher.Invoke([action]{
             $sync.tb.Text = $full
             $scroller.ScrollToBottom()
@@ -632,6 +675,9 @@ function Send-Chat {
   $script:sendTimer.Interval = [TimeSpan]::FromMilliseconds(400)
   $script:sendTimer.Add_Tick({
     try {
+      if ($script:uiState -eq 'thinking' -and $sync.full -ne $null -and [string]$sync.full -ne '') {
+        Set-Status 'Generating...' 'responding'
+      }
       if ($script:sendHandle.AsyncWaitHandle.WaitOne(0)) {
         $script:sendTimer.Stop()
         Write-BootLog 'tick-fired'
@@ -646,8 +692,20 @@ function Send-Chat {
         $sync.err = ''
       } else {
         [void]$historyList.Add(@{ role = 'assistant'; content = [string]$sync.full })
-        Set-Status 'Idle' 'idle'
-        try { Speak ([string]$sync.full) } catch {}
+        $said = ''
+        try { $said = Speak ([string]$sync.full) } catch {}
+        if ($said -eq 'speaking') {
+          $secs = 4
+          try {
+            $wc = ([regex]::Matches([string]$sync.full, '\S+')).Count
+            $secs = [Math]::Min(25, [Math]::Max(3, [int]($wc / 2.5)))
+          } catch {}
+          Set-Status 'Speaking...' 'speaking'
+          Flash-Done $secs
+        } else {
+          Set-Status 'Done' 'done'
+          Flash-Done 0
+        }
       }
     }
     } catch {
@@ -662,7 +720,7 @@ function Start-Listen {
     Set-Status 'Enable voice input in Bot settings first' 'attention'
     return
   }
-  Set-Status 'Listening' 'listening'
+  Set-Status 'Listening...' 'listening'
   $run = {
     param($sync)
     try {
@@ -716,8 +774,14 @@ function Refresh-Tasks {
     $win.Dispatcher.Invoke([action]{
       $taskList.Children.Clear()
       foreach ($task in $script:openTasks) {
+        $card = New-Object System.Windows.Controls.Border
+        $card.CornerRadius = New-Object System.Windows.CornerRadius(14)
+        $card.Background = To-Brush '#101014'
+        $card.BorderBrush = To-Brush '#26262c'
+        $card.BorderThickness = '1'
+        $card.Padding = '10,8'
+        $card.Margin = '0,0,0,6'
         $row = New-Object System.Windows.Controls.DockPanel
-        $row.Margin = '0,0,0,4'
         $btn = New-Object System.Windows.Controls.Button
         $btn.Content = '○'
         $btn.Tag = [string]$task.id
@@ -751,24 +815,28 @@ function Refresh-Tasks {
         }
         $row.Children.Add($btn) | Out-Null
         $row.Children.Add($txt) | Out-Null
-        $taskList.Children.Add($row) | Out-Null
+        $card.Child = $row
+        $taskList.Children.Add($card) | Out-Null
       }
       $n = $script:openTasks.Count
+      $subText = 'Ask for anything…'
       if ($n -gt 0) {
         $taskCount.Text = 'Tasks · ' + $n + ' open'
         $taskScroller.Visibility = 'Visible'
         $withDue = @($script:openTasks | Where-Object { $_.due_at } | Select-Object -First 1)
         if ($withDue.Count -gt 0) {
           $dt = [string]$withDue[0].title
-          $pillSub.Text = 'Due: ' + $dt.Substring(0, [Math]::Min(26, $dt.Length))
+          $subText = 'Due: ' + $dt.Substring(0, [Math]::Min(26, $dt.Length))
         } else {
           $ft = [string]$script:openTasks[0].title
-          $pillSub.Text = $ft.Substring(0, [Math]::Min(26, $ft.Length))
+          $subText = $ft.Substring(0, [Math]::Min(26, $ft.Length))
         }
       } else {
         $taskCount.Text = 'Tasks'
         $taskScroller.Visibility = 'Collapsed'
-        $pillSub.Text = 'Ask for anything…'
+      }
+      if ($script:uiState -eq 'idle' -or $script:uiState -eq 'done' -or $script:uiState -eq $null -or $script:uiState -eq '') {
+        $pillSub.Text = $subText
       }
     })
   } catch {}
@@ -802,7 +870,8 @@ function Add-TaskFromInput {
   if ($created -and $created.task) {
     $inputBox.Text = ''
     Refresh-Tasks
-    Set-Status 'Task added' 'idle'
+    Set-Status 'Task added' 'done'
+    Flash-Done 0
   } else {
     Set-Status 'Could not add task' 'attention'
   }
@@ -811,7 +880,6 @@ function Add-TaskFromInput {
 function Build-Island {
   $r = New-Object System.Xml.XmlNodeReader $islandXaml
   $script:win = [Windows.Markup.XamlReader]::Load($r)
-  $script:island = $win.FindName('Island')
   $script:island = $win.FindName('Island')
   $script:pillRow = $win.FindName('PillRow')
   $script:avatarWrap = $win.FindName('AvatarWrap')
