@@ -173,6 +173,8 @@ function Speak($text) {
         <ScrollViewer Grid.Row="1" Margin="12,0" Name="Scroller" VerticalScrollBarVisibility="Auto">
           <StackPanel Name="Messages" />
         </ScrollViewer>
+        <TextBlock Grid.Row="1" Name="HintLine" Foreground="#52525b" FontSize="13"
+          HorizontalAlignment="Center" VerticalAlignment="Center" Text="Ask for anything…" IsHitTestVisible="False" />
         <TextBlock Grid.Row="2" Name="StateLine" Foreground="#71717a" FontSize="11" Margin="14,2" Text="" Visibility="Collapsed" />
         <Grid Grid.Row="3" Margin="12,6,12,12">
           <Grid.ColumnDefinitions>
@@ -228,6 +230,7 @@ $convId = ''
 $expanded = $false
 $miniHidden = $false
 $pillCurH = 0
+$uiState = 'idle'
 $historyList = New-Object System.Collections.ArrayList
 
 function Screen-CenterX {
@@ -303,6 +306,7 @@ function To-Brush($hex) {
 }
 
 function Set-Status($text, $botState) {
+  $script:uiState = $botState
   $win.Dispatcher.Invoke([action]{
     $headStatus.Text = $text
     if ($text -eq '') {
@@ -338,12 +342,21 @@ function Stop-AvatarPulse { $pulseTimer.Stop(); $avatarWrap.Opacity = 1.0 }
 $dotsTimer = New-Object System.Windows.Threading.DispatcherTimer
 $dotsTimer.Interval = [TimeSpan]::FromMilliseconds(380)
 $dotsN = 0
+$waveFrames = @('|', '||', '|||', '||||', '|||', '||')
+$waveN = 0
 $dotsTimer.Add_Tick({
-  $dotsN = ($dotsN + 1) % 4
-  $d = ''
-  for ($i = 0; $i -lt $dotsN; $i++) { $d += '.' }
-  $headStatus.Text = 'Thinking' + $d
-  $stateLine.Text = 'Thinking' + $d
+  if ($script:uiState -eq 'listening') {
+    $waveN = ($waveN + 1) % $waveFrames.Count
+    $w = $waveFrames[$waveN]
+    $headStatus.Text = $w + ' Listening'
+    $stateLine.Text = $w + ' Listening — tap Mic to stop'
+  } else {
+    $dotsN = ($dotsN + 1) % 4
+    $d = ''
+    for ($i = 0; $i -lt $dotsN; $i++) { $d += '.' }
+    $headStatus.Text = 'Thinking' + $d
+    $stateLine.Text = 'Thinking' + $d
+  }
 })
 function Start-Dots { $dotsN = 0; $dotsTimer.Start() }
 function Stop-Dots { $dotsTimer.Stop() }
@@ -440,6 +453,8 @@ function Restore-Island {
 
 function Add-Message($role, $text) {
   $win.Dispatcher.Invoke([action]{
+    $hint = $win.FindName('HintLine')
+    if ($hint) { $hint.Visibility = 'Collapsed' }
     $b = New-Object System.Windows.Controls.Border
     if ($role -eq 'user') { $b.CornerRadius = New-Object System.Windows.CornerRadius(12,12,4,12) } else { $b.CornerRadius = New-Object System.Windows.CornerRadius(12,12,12,4) }
     $b.Padding = '10,7'
