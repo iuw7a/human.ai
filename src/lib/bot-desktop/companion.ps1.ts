@@ -523,9 +523,12 @@ function Send-Chat {
     $msgs += @{ role = $m.role; content = $m.content }
   }
   $body = @{ conversation_id = $convId; messages = $msgs } | ConvertTo-Json -Depth 6
+  $botBg = To-Brush '#131316'
+  $botBd = To-Brush '#26262c'
+  try { $botBg.Freeze(); $botBd.Freeze() } catch {}
   Write-BootLog 'm-body'
   $run = {
-    param($sync, $win, $msgStack, $scroller, $headStatus, $stateLine, $pillDot, $ApiBase, $BotSlug, $convId, $body, $Headers)
+    param($sync, $win, $msgStack, $scroller, $headStatus, $stateLine, $pillDot, $ApiBase, $BotSlug, $convId, $body, $Headers, $bgBrush, $bdBrush)
     try {
       $client = New-Object System.Net.Http.HttpClient
       $client.Timeout = [TimeSpan]::FromSeconds(150)
@@ -549,8 +552,8 @@ function Send-Chat {
         $b.Padding = '10,7'
         $b.Margin = '0,0,0,8'
         $b.MaxWidth = 300
-        $b.Background = To-Brush '#131316'
-        $b.BorderBrush = To-Brush '#26262c'
+        $b.Background = $bgBrush
+        $b.BorderBrush = $bdBrush
         $b.BorderThickness = '1'
         $b.HorizontalAlignment = 'Left'
         $t = New-Object System.Windows.Controls.TextBlock
@@ -590,7 +593,7 @@ function Send-Chat {
     }
   }
   $script:sendPs = [powershell]::Create()
-  $script:sendPs.AddScript($run).AddArgument($sync).AddArgument($win).AddArgument($msgStack).AddArgument($scroller).AddArgument($headStatus).AddArgument($stateLine).AddArgument($pillDot).AddArgument($ApiBase).AddArgument($BotSlug).AddArgument($convId).AddArgument($body).AddArgument($Headers) | Out-Null
+  $script:sendPs.AddScript($run).AddArgument($sync).AddArgument($win).AddArgument($msgStack).AddArgument($scroller).AddArgument($headStatus).AddArgument($stateLine).AddArgument($pillDot).AddArgument($ApiBase).AddArgument($BotSlug).AddArgument($convId).AddArgument($body).AddArgument($Headers).AddArgument($botBg).AddArgument($botBd) | Out-Null
   Write-BootLog 'm-args'
   $script:sendHandle = $script:sendPs.BeginInvoke()
   Write-BootLog 'sent-launched'
