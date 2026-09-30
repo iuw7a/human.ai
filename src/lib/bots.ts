@@ -185,11 +185,16 @@ export async function effectiveOwnerId(req: NextRequest): Promise<string | null>
   return key.user_id as string;
 }
 
-/** True when the error means the Bot tables don't exist yet. */
+/** True when the error means a DB table doesn't exist yet. */
 export function isMissingTableError(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String((e as { message?: unknown })?.message ?? e ?? "");
   const code = (e as { code?: unknown })?.code;
-  return code === "42P01" || /relation .* does not exist/i.test(msg);
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    /relation .* does not exist/i.test(msg) ||
+    /could not find the table/i.test(msg)
+  );
 }
 
 export function missingTableResponse(): Response {
