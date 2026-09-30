@@ -23,8 +23,7 @@ function q(s: string): string {
 export function buildCompanionScript(c: CompanionScriptInput): string {
   const accent = /^#[0-9a-fA-F]{6}$/.test(c.accent) ? c.accent : "#e5484d";
   const pillH = Math.min(64, Math.max(40, Math.round(c.size * 0.72)));
-  const script = `@'
-# ============================================================
+  const script = `# ============================================================
 # Human Bot Desktop companion — Dynamic Island edition
 # Bot: ${c.slug}  Server: ${c.apiBase}
 # Run: powershell -ExecutionPolicy Bypass -Command "& '<this>.ps1'"
@@ -56,6 +55,7 @@ Write-BootLog 'start'
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
 Add-Type -AssemblyName System.Speech
+Add-Type -AssemblyName System.Net.Http
 
 $StateDir = Join-Path $env:APPDATA 'HumanAI\\bots'
 if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory -Path $StateDir -Force | Out-Null }
@@ -815,7 +815,8 @@ function Build-Island {
   })
 }
 
-# ---------- boot ----------
+# ---------- boot (skipped when dot-sourced for testing) ----------
+if ($env:HUMANBOT_TEST -ne '1') {
 $prof = Api-Get ('/api/bots/' + $BotSlug + '/companion')
 if (-not $prof) {
   Add-Type -AssemblyName System.Windows.Forms
@@ -846,7 +847,8 @@ if (-not $state.collapsed) {
 }
 Write-BootLog 'running'
 [System.Windows.Application]::new().Run() | Out-Null
-'@;`
+}
+`;
   return script
     .replace(/__NAME__/g, c.name.replace(/"/g, ""))
     .replace(/__ACCENT__/g, accent)
