@@ -1,63 +1,29 @@
-/** Builds the Human Bot Desktop companion (.ps1) — Dynamic Island style.
- *  Top-center pill (avatar + name) that spring-expands downward into a chat
- *  panel. PowerShell 5.1 safe. States: idle/listening/thinking/responding/
- *  working/attention. Position persisted; autostart via companion .cmd.
- */
-
-export interface CompanionScriptInput {
-  apiBase: string;
-  slug: string;
-  name: string;
-  avatarUrl: string | null;
-  accent: string;
-  size: number;
-  alwaysOnTop: boolean;
-  tts: boolean;
-  stt: boolean;
-}
-
-function q(s: string): string {
-  return `'${s.replace(/'/g, "''")}'`;
-}
-
-export function buildCompanionScript(c: CompanionScriptInput): string {
-  const accent = /^#[0-9a-fA-F]{6}$/.test(c.accent) ? c.accent : "#e5484d";
-  const pillH = Math.min(64, Math.max(40, Math.round(c.size * 0.72)));
-  const script = `@'
+@'
 # ============================================================
 # Human Bot Desktop companion — Dynamic Island edition
-# Bot: ${c.slug}  Server: ${c.apiBase}
+# Bot: jawad  Server: http://localhost:3000
 # Run: powershell -ExecutionPolicy Bypass -Command "& '<this>.ps1'"
 # ============================================================
 $ErrorActionPreference = 'SilentlyContinue'
 
-$ApiBase = ${q(c.apiBase)}
-$BotSlug = ${q(c.slug)}
-$BotName = ${q(c.name)}
-$AvatarUrl = ${q(c.avatarUrl ?? "")}
-$Accent = ${q(accent)}
-$PillH = ${pillH}
+$ApiBase = 'http://localhost:3000'
+$BotSlug = 'jawad'
+$BotName = 'Jawad'
+$AvatarUrl = 'https://ygzauyrovrcidtcqpyjh.supabase.co/storage/v1/object/public/bot-avatars/794392d9-39be-4293-aac0-9946ebe634c1/aa91d390-d0d2-4251-a80e-e6596c43d8bb/e568c6ac-cd91-4a42-a863-18d57cd214be.jpeg'
+$Accent = '#e60008'
+$PillH = 64
 $PillW = 208
 $PanelW = 380
 $PanelH = 524
 $TopMargin = 8
-$DefaultTop = ${c.alwaysOnTop ? "$true" : "$false"}
-$DefaultTts = ${c.tts ? "$true" : "$false"}
-$DefaultStt = ${c.stt ? "$true" : "$false"}
-
-$BootLog = Join-Path $env:TEMP ('humanbot-' + $BotSlug + '.log')
-function Write-BootLog($m) {
-  try { Add-Content $BootLog ('[' + (Get-Date -Format 'HH:mm:ss') + '] ' + $m) } catch {}
-}
-trap {
-  Write-BootLog ('FATAL: ' + $_.Exception.Message)
-}
-Write-BootLog 'start'
+$DefaultTop = $true
+$DefaultTts = $true
+$DefaultStt = $true
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
 Add-Type -AssemblyName System.Speech
 
-$StateDir = Join-Path $env:APPDATA 'HumanAI\\bots'
+$StateDir = Join-Path $env:APPDATA 'HumanAI\bots'
 if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory -Path $StateDir -Force | Out-Null }
 $StateFile = Join-Path $StateDir ($BotSlug + '.json')
 $AvatarFile = Join-Path $env:TEMP ('humanbot-' + $BotSlug + '.png')
@@ -85,11 +51,10 @@ $Headers = @{ 'x-api-key' = $state.apiKey }
 if ($AvatarUrl -ne '' -and -not (Test-Path $AvatarFile)) {
   try { Invoke-WebRequest -Uri $AvatarUrl -OutFile $AvatarFile -TimeoutSec 20 } catch {}
 }
-Write-BootLog 'avatar-ok'
 
 $sync = [hashtable]::Synchronized(@{ stop = $false; busy = $false })
 $http = New-Object System.Net.Http.HttpClient
-$http.Timeout = [TimeSpan]::FromSeconds(30)
+$http.Timeout = [TimeSpan]::FromSeconds(120)
 foreach ($h in $Headers.Keys) { $http.DefaultRequestHeaders.Add($h, $Headers[$h]) | Out-Null }
 
 function Api-Get($path) {
@@ -125,14 +90,14 @@ function Speak($text) {
 [xml]$islandXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-  ShowInTaskbar="False" Title="__NAME__">
+  ShowInTaskbar="False" Title="Jawad">
   <Border Name="Island" CornerRadius="24" Background="#0B0B0DF2"
     BorderBrush="#2A2A30" BorderThickness="1">
     <Border.Effect>
       <DropShadowEffect Color="Black" Opacity="0.55" ShadowDepth="6" BlurRadius="22" />
     </Border.Effect>
     <DockPanel LastChildFill="True">
-      <Grid Name="PillRow" DockPanel.Dock="Top" Height="__PILLH__" Background="Transparent">
+      <Grid Name="PillRow" DockPanel.Dock="Top" Height="64" Background="Transparent">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="*" />
@@ -140,7 +105,7 @@ function Speak($text) {
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <Grid Grid.Column="0" Name="AvatarWrap" Margin="9,0,0,0" HorizontalAlignment="Center" VerticalAlignment="Center">
-          <Ellipse Name="AvatarRing" Stroke="__ACCENT__" StrokeThickness="2" />
+          <Ellipse Name="AvatarRing" Stroke="#e60008" StrokeThickness="2" />
           <Ellipse Name="AvatarFace" Margin="3" />
           <TextBlock Name="AvatarFallback" Foreground="White" FontWeight="Bold"
             HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
@@ -812,9 +777,7 @@ if ($prof.bot -and $prof.bot.companion -and $prof.bot.companion.enabled -eq $fal
   [System.Windows.Forms.MessageBox]::Show('Desktop is disabled for this Bot. Enable it on the Bot Desktop page.', 'Human Bot Desktop') | Out-Null
   exit
 }
-Write-BootLog 'api-ok'
 Build-Island
-Write-BootLog 'build-ok'
 $sz = $state.size
 if (-not $sz) { $sz = $PillH }
 Apply-IslandSize $sz
@@ -825,15 +788,8 @@ if ($state.hidden) {
   Place-Island $PillW $sz
 }
 $win.Show()
-Write-BootLog 'shown'
 if (-not $state.collapsed) {
   Expand-Island $true
 }
-Write-BootLog 'running'
 [System.Windows.Application]::new().Run() | Out-Null
-'@;`
-  return script
-    .replace(/__NAME__/g, c.name.replace(/"/g, ""))
-    .replace(/__ACCENT__/g, accent)
-    .replace(/__PILLH__/g, String(pillH));
-}
+'@;
