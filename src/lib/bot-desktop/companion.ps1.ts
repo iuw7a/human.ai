@@ -606,6 +606,7 @@ function Send-Chat {
         $script:sendPs.Dispose()
         Write-BootLog 'tick-done'
       if ($sync.err -ne $null -and $sync.err -ne '') {
+        Write-BootLog ('reply-err-full: ' + [string]$sync.err)
         $short = [string]$sync.err
         if ($short.Length -gt 90) { $short = $short.Substring(0, 90) + '…' }
         Set-Status ('Error: ' + $short) 'attention'
