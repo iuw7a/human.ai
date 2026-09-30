@@ -613,6 +613,7 @@ function Send-Chat {
         Set-Status 'Idle' 'idle'
         try { Speak ([string]$sync.full) } catch {}
       }
+    }
     } catch {
       Write-BootLog ('tick-catch: ' + $_.Exception.Message)
     }
