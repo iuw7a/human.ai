@@ -50,6 +50,8 @@ function Write-BootLog($m) {
 }
 trap {
   Write-BootLog ('FATAL: ' + $_.Exception.Message)
+  try { Write-BootLog ('AT: ' + $_.ScriptStackTrace) } catch {}
+  try { Write-BootLog ('POS: ' + $_.InvocationInfo.PositionMessage) } catch {}
 }
 Write-BootLog 'start'
 
