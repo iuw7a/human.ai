@@ -163,6 +163,20 @@ export async function effectiveOwnerId(req: NextRequest): Promise<string | null>
   return key.user_id as string;
 }
 
+/** True when the error means the Bot tables don't exist yet. */
+export function isMissingTableError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String((e as { message?: unknown })?.message ?? e ?? "");
+  const code = (e as { code?: unknown })?.code;
+  return code === "42P01" || /relation .* does not exist/i.test(msg);
+}
+
+export function missingTableResponse(): Response {
+  return Response.json(
+    { error: "Database not set up: run supabase/bots_schema.sql once in the Supabase SQL editor, then retry." },
+    { status: 500 }
+  );
+}
+
 /** True when the user holds an active Pro (plus) subscription. SERVER ONLY. */
 export async function userIsPro(userId: string): Promise<boolean> {
   try {

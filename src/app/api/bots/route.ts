@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
-import { MAX_BOTS_PER_USER, normalizeSlug, resolveBotModel, sessionUser, toBot, userIsPro, validSlug } from "@/lib/bots";
+import { isMissingTableError, MAX_BOTS_PER_USER, missingTableResponse, normalizeSlug, resolveBotModel, sessionUser, toBot, userIsPro, validSlug } from "@/lib/bots";
 import { defaultDbModelSlug, logAppError } from "@/lib/admin";
 
 export const runtime = "nodejs";
@@ -8,32 +8,34 @@ export const dynamic = "force-dynamic";
 
 /** GET /api/bots — the owner's bots (Pro only). */
 export async function GET() {
-  const user = await sessionUser();
-  if (!user) return Response.json({ error: "Not authenticated." }, { status: 401 });
-  if (!(await userIsPro(user.id))) {
-    return Response.json({ error: "Human Bot requires a Pro subscription.", upgrade: true }, { status: 403 });
-  }
   try {
+    const user = await sessionUser();
+    if (!user) return Response.json({ error: "Not authenticated." }, { status: 401 });
+    if (!(await userIsPro(user.id))) {
+      return Response.json({ error: "Human Bot requires a Pro subscription.", upgrade: true }, { status: 403 });
+    }
     const admin = createAdminSupabase();
-    const { data } = await admin
+    const { data, error } = await admin
       .from("bots")
       .select("*")
       .eq("owner_id", user.id)
       .order("updated_at", { ascending: false });
+    if (error) throw error;
     return Response.json({ bots: (data ?? []).map(toBot) });
   } catch (e) {
+    if (isMissingTableError(e)) return missingTableResponse();
     return Response.json({ error: e instanceof Error ? e.message : "Failed to load bots." }, { status: 500 });
   }
 }
 
 /** POST /api/bots — create a Bot (Pro only). */
 export async function POST(req: NextRequest) {
-  const user = await sessionUser();
-  if (!user) return Response.json({ error: "Not authenticated." }, { status: 401 });
-  if (!(await userIsPro(user.id))) {
-    return Response.json({ error: "Human Bot requires a Pro subscription.", upgrade: true }, { status: 403 });
-  }
   try {
+    const user = await sessionUser();
+    if (!user) return Response.json({ error: "Not authenticated." }, { status: 401 });
+    if (!(await userIsPro(user.id))) {
+      return Response.json({ error: "Human Bot requires a Pro subscription.", upgrade: true }, { status: 403 });
+    }
     const b = (await req.json()) as {
       name?: string;
       slug?: string;
@@ -103,6 +105,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ bot: toBot(data) });
   } catch (e) {
     void logAppError("api/bots POST", e instanceof Error ? e.message : "Failed.");
+    if (isMissingTableError(e)) return missingTableResponse();
     return Response.json({ error: e instanceof Error ? e.message : "Could not create Bot." }, { status: 500 });
   }
 }
