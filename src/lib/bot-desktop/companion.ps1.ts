@@ -589,21 +589,22 @@ function Send-Chat {
       $sync.busy = $false
     }
   }
-  $ps = [powershell]::Create()
-  Write-BootLog 'm-ps'
-  $ps.AddScript($run).AddArgument($sync).AddArgument($win).AddArgument($msgStack).AddArgument($scroller).AddArgument($headStatus).AddArgument($stateLine).AddArgument($pillDot).AddArgument($ApiBase).AddArgument($BotSlug).AddArgument($convId).AddArgument($body).AddArgument($Headers) | Out-Null
+  $script:sendPs = [powershell]::Create()
+  $script:sendPs.AddScript($run).AddArgument($sync).AddArgument($win).AddArgument($msgStack).AddArgument($scroller).AddArgument($headStatus).AddArgument($stateLine).AddArgument($pillDot).AddArgument($ApiBase).AddArgument($BotSlug).AddArgument($convId).AddArgument($body).AddArgument($Headers) | Out-Null
   Write-BootLog 'm-args'
-  $handle = $ps.BeginInvoke()
+  $script:sendHandle = $script:sendPs.BeginInvoke()
   Write-BootLog 'sent-launched'
-  $timer = New-Object System.Windows.Threading.DispatcherTimer
-  $timer.Interval = [TimeSpan]::FromMilliseconds(400)
-  $timer.Add_Tick({
-    if ($handle.AsyncWaitHandle.WaitOne(0)) {
-      $timer.Stop()
-      Write-BootLog 'tick-fired'
-      try { $ps.EndInvoke($handle) | Out-Null } catch { Write-BootLog ('endinvoke-fail: ' + $_.Exception.Message) }
-      $ps.Dispose()
-      Write-BootLog 'tick-done'
+  if ($script:sendTimer) { try { $script:sendTimer.Stop() } catch {} }
+  $script:sendTimer = New-Object System.Windows.Threading.DispatcherTimer
+  $script:sendTimer.Interval = [TimeSpan]::FromMilliseconds(400)
+  $script:sendTimer.Add_Tick({
+    try {
+      if ($script:sendHandle.AsyncWaitHandle.WaitOne(0)) {
+        $script:sendTimer.Stop()
+        Write-BootLog 'tick-fired'
+        try { $script:sendPs.EndInvoke($script:sendHandle) | Out-Null } catch { Write-BootLog ('endinvoke-fail: ' + $_.Exception.Message) }
+        $script:sendPs.Dispose()
+        Write-BootLog 'tick-done'
       if ($sync.err -ne $null -and $sync.err -ne '') {
         Set-Status 'Error' 'attention'
         $sync.err = ''
@@ -612,9 +613,11 @@ function Send-Chat {
         Set-Status 'Idle' 'idle'
         try { Speak ([string]$sync.full) } catch {}
       }
+    } catch {
+      Write-BootLog ('tick-catch: ' + $_.Exception.Message)
     }
   })
-  $timer.Start()
+  $script:sendTimer.Start()
 }
 
 function Start-Listen {
@@ -637,30 +640,35 @@ function Start-Listen {
       $sync.heard = '__unavailable__'
     }
   }
-  $ps = [powershell]::Create()
-  $ps.AddScript($run).AddArgument($sync) | Out-Null
-  $h = $ps.BeginInvoke()
-  $timer = New-Object System.Windows.Threading.DispatcherTimer
-  $timer.Interval = [TimeSpan]::FromMilliseconds(300)
-  $timer.Add_Tick({
-    if ($h.AsyncWaitHandle.WaitOne(0)) {
-      $timer.Stop()
-      try { $ps.EndInvoke($h) | Out-Null } catch {}
-      $ps.Dispose()
-      $heard = [string]$sync.heard
-      $sync.heard = ''
-      if ($heard -eq '__unavailable__') {
-        Set-Status 'Voice input unavailable on this PC' 'attention'
-      } elseif ($heard -ne '') {
-        $inputBox.Text = $heard
-        Set-Status 'Idle' 'idle'
-        Send-Chat
-      } else {
-        Set-Status 'Idle' 'idle'
+  $script:listenPs = [powershell]::Create()
+  $script:listenPs.AddScript($run).AddArgument($sync) | Out-Null
+  $script:listenHandle = $script:listenPs.BeginInvoke()
+  if ($script:listenTimer) { try { $script:listenTimer.Stop() } catch {} }
+  $script:listenTimer = New-Object System.Windows.Threading.DispatcherTimer
+  $script:listenTimer.Interval = [TimeSpan]::FromMilliseconds(300)
+  $script:listenTimer.Add_Tick({
+    try {
+      if ($script:listenHandle.AsyncWaitHandle.WaitOne(0)) {
+        $script:listenTimer.Stop()
+        try { $script:listenPs.EndInvoke($script:listenHandle) | Out-Null } catch { Write-BootLog ('listen-endinvoke-fail: ' + $_.Exception.Message) }
+        $script:listenPs.Dispose()
+        $heard = [string]$sync.heard
+        $sync.heard = ''
+        if ($heard -eq '__unavailable__') {
+          Set-Status 'Voice input unavailable on this PC' 'attention'
+        } elseif ($heard -ne '') {
+          $inputBox.Text = $heard
+          Set-Status 'Idle' 'idle'
+          Send-Chat
+        } else {
+          Set-Status 'Idle' 'idle'
+        }
       }
+    } catch {
+      Write-BootLog ('listen-tick-catch: ' + $_.Exception.Message)
     }
   })
-  $timer.Start()
+  $script:listenTimer.Start()
 }
 
 function Build-Island {
@@ -818,7 +826,8 @@ function Build-Island {
   $spk.Add_Click({
     $state.tts = -not $state.tts
     Save-State
-    $spk.Opacity = if ($state.tts) { 1.0 } else { 0.45 }
+    $btn = $win.FindName('BtnSpeak')
+    if ($btn) { $btn.Opacity = if ($state.tts) { 1.0 } else { 0.45 } }
     if (-not $state.tts -and $speaker) { try { $speaker.SpeakAsyncCancelAll() | Out-Null } catch {} }
   })
   $inputBox.Add_KeyDown({
