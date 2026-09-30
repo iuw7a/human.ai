@@ -510,16 +510,20 @@ function Send-Chat {
   if (-not $expanded) { Expand-Island $true }
   Write-BootLog 'send-start'
   $inputBox.Text = ''
+  Write-BootLog 'm-clear'
   Add-Message 'user' $text
+  Write-BootLog 'm-appended'
   [void]$historyList.Add(@{ role = 'user'; content = $text })
   $sync.stop = $false
   $sync.busy = $true
   Set-Status 'Thinking' 'thinking'
+  Write-BootLog 'm-status'
   $msgs = @()
   foreach ($m in ($historyList | Select-Object -Last 20)) {
     $msgs += @{ role = $m.role; content = $m.content }
   }
   $body = @{ conversation_id = $convId; messages = $msgs } | ConvertTo-Json -Depth 6
+  Write-BootLog 'm-body'
   $run = {
     param($sync, $win, $msgStack, $scroller, $headStatus, $stateLine, $pillDot, $ApiBase, $BotSlug, $convId, $body, $Headers)
     try {
@@ -586,7 +590,9 @@ function Send-Chat {
     }
   }
   $ps = [powershell]::Create()
+  Write-BootLog 'm-ps'
   $ps.AddScript($run).AddArgument($sync).AddArgument($win).AddArgument($msgStack).AddArgument($scroller).AddArgument($headStatus).AddArgument($stateLine).AddArgument($pillDot).AddArgument($ApiBase).AddArgument($BotSlug).AddArgument($convId).AddArgument($body).AddArgument($Headers) | Out-Null
+  Write-BootLog 'm-args'
   $handle = $ps.BeginInvoke()
   Write-BootLog 'sent-launched'
   $timer = New-Object System.Windows.Threading.DispatcherTimer
