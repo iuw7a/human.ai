@@ -606,7 +606,9 @@ function Send-Chat {
         $script:sendPs.Dispose()
         Write-BootLog 'tick-done'
       if ($sync.err -ne $null -and $sync.err -ne '') {
-        Set-Status 'Error' 'attention'
+        $short = [string]$sync.err
+        if ($short.Length -gt 90) { $short = $short.Substring(0, 90) + '…' }
+        Set-Status ('Error: ' + $short) 'attention'
         $sync.err = ''
       } else {
         [void]$historyList.Add(@{ role = 'assistant'; content = [string]$sync.full })
