@@ -2,14 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, ThumbsUp, ThumbsDown, Globe, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
-import { ChatInput, type PendingImage } from "./ChatInput";
-import { Markdown } from "./Markdown";
-import { AvatarMark } from "./Logo";
+import { Check, Copy, ThumbsUp, ThumbsDown, Globe, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown, Sparkles, Volume2, VolumeX } from "lucide-react";
+import type { PendingImage } from "./ChatInput";
 import { createClient } from "@/lib/supabase/client";
 import { getModel } from "@/lib/models";
 import type { ChatMode } from "./ModeSelector";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { DynamicIsland } from "./ai/DynamicIsland";
+import { AIAvatar } from "./ai/AIAvatar";
+import { Composer } from "./ai/Composer";
+import { UserMessage, AssistantMessage, ThinkingRow } from "./ai/Message";
+import { MessageList } from "./ai/MessageList";
+import { EmptyState } from "./ai/EmptyState";
+import { useVoice } from "./ai/useVoice";
+import type { AIStatus } from "./ai/types";
 
 export interface StoredMessage {
   id?: string;
@@ -343,12 +349,17 @@ export function ChatView({
   const [mode, setMode] = useState<ChatMode>("chat");
   const modeRef = useRef<ChatMode>("chat");
   const [activity, setActivity] = useState<ModeActivity | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
   const stopRef = useRef(false);
   const approvalResolveRef = useRef<((approved: boolean) => void) | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const runKindRef = useRef<"agent" | "computer" | null>(null);
+  // Voice (real browser STT/TTS) + dictated text injection into the composer.
+  const [voiceText, setVoiceText] = useState("");
+  const voice = useVoice({ onTranscript: (t) => setVoiceText((prev) => (prev ? `${prev} ${t}` : t)) });
+  // Brief "completed" flash on the island after each finished turn.
+  const [completedFlash, setCompletedFlash] = useState(false);
+  const prevSendingRef = useRef(false);
 
   function changeMode(m: ChatMode) {
     modeRef.current = m;
@@ -397,8 +408,30 @@ export function ChatView({
   }, [user?.id]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamed, activity]);
+    if (prevSendingRef.current && !sending) {
+      setCompletedFlash(true);
+      const t = setTimeout(() => setCompletedFlash(false), 2500);
+      prevSendingRef.current = false;
+      return () => clearTimeout(t);
+    }
+    prevSendingRef.current = sending;
+  }, [sending]);
+
+  function aiStatus(): { status: AIStatus; text?: string } {
+    if (voice.listening) return { status: "listening" };
+    if (voice.speaking) return { status: "speaking" };
+    if (activity && !activity.doneText) {
+      if (activity.approval) return { status: "working", text: "Needs approval" };
+      return { status: "working", text: activity.status };
+    }
+    if (sending) {
+      if (streamed) return { status: "generating" };
+      if (mcpUsed.length > 0) return { status: "searching" };
+      return { status: "thinking" };
+    }
+    if (completedFlash) return { status: "completed" };
+    return { status: "idle" };
+  }
 
   async function persist(
     role: "user" | "assistant",
@@ -897,9 +930,18 @@ export function ChatView({
   }
 
   const empty = messages.length === 0 && !streamed && !sending;
+  const { status: islandStatus, text: islandText } = aiStatus();
+  const avatarStatus: AIStatus = voice.speaking
+    ? "speaking"
+    : sending
+      ? streamed
+        ? "generating"
+        : "thinking"
+      : "idle";
 
   return (
     <div className="relative flex h-full flex-col bg-black">
+      <DynamicIsland status={islandStatus} text={islandText} />
       {/* Chat background at 100% — the image IS the backdrop. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         {bgOk && (
@@ -922,91 +964,66 @@ export function ChatView({
         )}
       </div>
 
-      <div className="relative z-10 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
-          {empty ? (
-            <div className="flex min-h-[50vh] flex-col items-center justify-center text-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo.webp"
-                alt="Human AI"
-                className="mb-6 h-20 w-20 rounded-3xl object-cover shadow-[0_8px_30px_rgba(0,0,0,0.5)]"
+      {empty ? (
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-4">
+          <EmptyState
+            avatar={<AIAvatar status={islandStatus === "idle" ? "idle" : islandStatus} size={88} />}
+            title="How can I help you?"
+            subtitle="Ask anything. Attach an image to analyze it."
+          />
+        </div>
+      ) : (
+        <MessageList
+          scrollKey={`${messages.length}:${streamed.length}:${activity?.steps.length ?? 0}:${activity?.status ?? ""}:${mcpUsed.length}`}
+        >
+          {messages.map((m, i) =>
+            m.role === "user" ? (
+              <UserMessage
+                key={i}
+                content={m.content}
+                images={(m.images ?? []).filter((img) => img.url).map((img) => ({ url: img.url }))}
               />
-              <h1 className="text-5xl font-black tracking-[0.24em] text-white sm:text-6xl">
-                HUMAN AI
-              </h1>
-              <p className="mt-3 text-[15px] text-zinc-400">
-                Ask anything. Attach an image to analyze it.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {messages.map((m, i) => (
-                <div key={i}>
-                  {m.role === "user" ? (
-                    <div className="flex justify-end">
-                      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-ink-800 px-4 py-2.5 ring-1 ring-ink-700">
-                        {m.images && m.images.length > 0 && (
-                          <div className="mb-2 flex flex-wrap gap-2">
-                            {m.images.map((img, j) =>
-                              img.url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  key={j}
-                                  src={img.url}
-                                  alt={`Attachment ${j + 1}`}
-                                  className="h-32 w-32 rounded-xl border border-ink-600 object-cover"
-                                />
-                              ) : null
-                            )}
-                          </div>
-                        )}
-                        <p className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-100">
-                          {m.content}
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex gap-3">
-                      <AvatarMark size={28} />
-                      <div className="min-w-0 flex-1">
-                        <Markdown content={m.content} />
-                        <div className="mt-2 flex items-center gap-1">
-                          <CopyButton text={m.content} />
-                          {flags.feedback !== false && user && (
-                            <VoteButtons chatId={chatId} modelId={modelId} excerpt={m.content} />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {(sending || streamed) && (
-                <div className="flex gap-3">
-                  <AvatarMark size={28} />
-                  <div className="min-w-0 flex-1">
-                    {streamed ? (
-                      <Markdown content={streamed} />
-                    ) : (
-                      <div className="flex items-center gap-2 py-2" aria-label="Thinking">
-                        <span className="flex items-center gap-1.5">
-                          <span className="typing-dot h-1.5 w-1.5 rounded-full bg-zinc-500" />
-                          <span className="typing-dot h-1.5 w-1.5 rounded-full bg-zinc-500" />
-                          <span className="typing-dot h-1.5 w-1.5 rounded-full bg-zinc-500" />
-                        </span>
-                        <span className="text-sm text-zinc-400">Thinking…</span>
-                      </div>
+            ) : (
+              <AssistantMessage
+                key={i}
+                content={m.content}
+                avatar={<AIAvatar status="idle" size={36} />}
+                actions={
+                  <>
+                    <CopyButton text={m.content} />
+                    {voice.ttsSupported && (
+                      <button
+                        onClick={() => (voice.speaking ? voice.stopSpeaking() : voice.speak(m.content))}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-ink-800 hover:text-zinc-200"
+                        aria-label={voice.speaking ? "Stop speaking" : "Read aloud"}
+                        title={voice.speaking ? "Stop speaking" : "Read aloud"}
+                      >
+                        {voice.speaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                      </button>
                     )}
-                  </div>
-                </div>
-              )}
-            </div>
+                    {flags.feedback !== false && user && (
+                      <VoteButtons chatId={chatId} modelId={modelId} excerpt={m.content} />
+                    )}
+                  </>
+                }
+              />
+            )
+          )}
+
+          {(sending || streamed) && !activity && (
+            streamed ? (
+              <AssistantMessage
+                content={streamed}
+                streaming
+                avatar={<AIAvatar status="generating" size={36} />}
+              />
+            ) : (
+              <ThinkingRow avatar={<AIAvatar status="thinking" size={36} />} />
+            )
           )}
 
           {error && (
-            <div className="mt-4 rounded-xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm text-red-200">
+            <div className="rounded-[22px] border border-accent/40 bg-accent/10 px-5 py-3.5 text-sm text-red-200">
               {error}
             </div>
           )}
@@ -1024,7 +1041,7 @@ export function ChatView({
             <AdCard ad={ad} onDismiss={() => setAdDismissed(true)} />
           )}
           {mcpUsed.length > 0 && (
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <Wrench size={13} className="text-zinc-500" />
               {mcpUsed.map((u, i) => (
                 <span
@@ -1036,9 +1053,8 @@ export function ChatView({
               ))}
             </div>
           )}
-          <div ref={bottomRef} />
-        </div>
-      </div>
+        </MessageList>
+      )}
 
       <div className="relative z-10">
         <div className="mx-auto w-full max-w-3xl px-4 pb-5 pt-2 sm:px-6">
@@ -1068,12 +1084,19 @@ export function ChatView({
               <Sparkles size={11} /> Try Barada AI
             </a>
           </div>
-          <ChatInput
+          <Composer
             onSend={send}
             sending={sending}
             allowUpload={flags.image_generation !== false}
             mode={mode}
             onModeChange={changeMode}
+            voiceText={voiceText}
+            onVoiceTextConsumed={() => setVoiceText("")}
+            voice={{
+              listening: voice.listening,
+              supported: voice.sttSupported,
+              onMic: () => (voice.listening ? voice.stopListening() : voice.startListening()),
+            }}
             placeholder={
               mode === "agent"
                 ? "Describe the task, e.g. Research this company and summarize it…"

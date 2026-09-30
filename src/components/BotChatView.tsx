@@ -3,13 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Check, Copy, Wrench, Plus, ArrowLeft, Plug } from "lucide-react";
-import { ChatInput, type PendingImage } from "./ChatInput";
-import { Markdown } from "./Markdown";
-import { BotAvatar } from "./BotAvatar";
+import { Check, Copy, Wrench, Plus, ArrowLeft, Plug, Volume2, VolumeX } from "lucide-react";
+import type { PendingImage } from "./ChatInput";
 import { createClient } from "@/lib/supabase/client";
 import type { Bot } from "@/lib/bots";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { DynamicIsland } from "./ai/DynamicIsland";
+import { AIAvatar } from "./ai/AIAvatar";
+import { Composer } from "./ai/Composer";
+import { UserMessage, AssistantMessage, ThinkingRow } from "./ai/Message";
+import { MessageList } from "./ai/MessageList";
+import { EmptyState } from "./ai/EmptyState";
+import { TaskPanel } from "./ai/TaskCard";
+import { useVoice } from "./ai/useVoice";
+import type { AIStatus } from "./ai/types";
 
 export interface BotStoredMessage {
   role: "user" | "assistant";
@@ -63,18 +70,41 @@ export function BotChatView({
   const [error, setError] = useState<string | null>(null);
   const [mcpUsed, setMcpUsed] = useState<{ server: string; tool: string }[]>([]);
   const [bgOk, setBgOk] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
+  const [voiceText, setVoiceText] = useState("");
+  const voice = useVoice({ onTranscript: (t) => setVoiceText((prev) => (prev ? `${prev} ${t}` : t)) });
+  const [completedFlash, setCompletedFlash] = useState(false);
+  const prevSendingRef = useRef(false);
+
+  useEffect(() => {
+    if (prevSendingRef.current && !sending) {
+      setCompletedFlash(true);
+      const t = setTimeout(() => setCompletedFlash(false), 2500);
+      prevSendingRef.current = false;
+      return () => clearTimeout(t);
+    }
+    prevSendingRef.current = sending;
+  }, [sending]);
+
+  const botStatus: AIStatus = voice.listening
+    ? "listening"
+    : voice.speaking
+      ? "speaking"
+      : sending
+        ? streamed
+          ? "generating"
+          : mcpUsed.length > 0
+            ? "searching"
+            : "thinking"
+        : completedFlash
+          ? "completed"
+          : "idle";
 
   useEffect(() => {
     const probe = new Image();
     probe.onload = () => setBgOk(true);
     probe.src = "/chat-bg.png";
   }, []);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamed]);
 
   async function uploadImages(images: PendingImage[]): Promise<UploadedImage[]> {
     if (images.length === 0) return [];
@@ -208,9 +238,14 @@ export function BotChatView({
   }
 
   const empty = messages.length === 0 && !streamed && !sending;
+  const msgAvatarStatus: AIStatus = voice.speaking ? "speaking" : sending ? (streamed ? "generating" : "thinking") : "idle";
 
   return (
     <div className="relative flex h-full flex-col bg-black">
+      <DynamicIsland
+        status={botStatus}
+        avatar={<AIAvatar status={botStatus} size={22} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />}
+      />
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         {bgOk && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -220,7 +255,7 @@ export function BotChatView({
 
       <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/5 px-4 py-2.5 sm:px-6">
         <div className="flex min-w-0 items-center gap-2.5 pl-10 lg:pl-0">
-          <BotAvatar src={bot.avatar_url} name={bot.name} size={30} accent={bot.theme.accent} state={sending ? "thinking" : "idle"} />
+          <AIAvatar status={msgAvatarStatus} size={30} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-white">{bot.name}</p>
             <p className="truncate font-mono text-[11px] text-zinc-500">/bot/{bot.slug}</p>
@@ -236,75 +271,64 @@ export function BotChatView({
         </div>
       </div>
 
-      <div className="relative z-10 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
-          {empty ? (
-            <div className="flex min-h-[50vh] flex-col items-center justify-center text-center">
-              <BotAvatar src={bot.avatar_url} name={bot.name} size={80} accent={bot.theme.accent} />
-              <h1 className="mt-4 text-3xl font-black tracking-tight text-white">{bot.name}</h1>
-              <p className="mt-2 max-w-md text-[15px] text-zinc-400">
-                {bot.description || "Talk to your companion."}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {messages.map((m, i) => (
-                <div key={i}>
-                  {m.role === "user" ? (
-                    <div className="flex justify-end">
-                      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-ink-800 px-4 py-2.5 ring-1 ring-ink-700">
-                        {m.images && m.images.length > 0 && (
-                          <div className="mb-2 flex flex-wrap gap-2">
-                            {m.images.map((img, j) =>
-                              img.url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img key={j} src={img.url} alt={`Attachment ${j + 1}`} className="h-32 w-32 rounded-xl border border-ink-600 object-cover" />
-                              ) : null
-                            )}
-                          </div>
-                        )}
-                        <p className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-100">{m.content}</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex gap-3">
-                      <BotAvatar src={bot.avatar_url} name={bot.name} size={28} accent={bot.theme.accent} />
-                      <div className="min-w-0 flex-1">
-                        <Markdown content={m.content} />
-                        <div className="mt-2 flex items-center gap-1">
-                          <CopyButton text={m.content} />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {(sending || streamed) && (
-                <div className="flex gap-3">
-                  <BotAvatar src={bot.avatar_url} name={bot.name} size={28} accent={bot.theme.accent} state="thinking" />
-                  <div className="min-w-0 flex-1">
-                    {streamed ? (
-                      <Markdown content={streamed} />
-                    ) : (
-                      <div className="flex items-center gap-2 py-2" aria-label="Thinking">
-                        <span className="flex items-center gap-1.5">
-                          <span className="typing-dot h-1.5 w-1.5 rounded-full bg-zinc-500" />
-                          <span className="typing-dot h-1.5 w-1.5 rounded-full bg-zinc-500" />
-                          <span className="typing-dot h-1.5 w-1.5 rounded-full bg-zinc-500" />
-                        </span>
-                        <span className="text-sm text-zinc-400">{bot.name} is thinking…</span>
-                      </div>
+      {empty ? (
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-4">
+          <EmptyState
+            avatar={<AIAvatar status={botStatus} size={88} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />}
+            title="How can I help you?"
+            subtitle={bot.description || `Talk to ${bot.name}, your companion.`}
+          />
+        </div>
+      ) : (
+        <MessageList scrollKey={`${messages.length}:${streamed.length}:${mcpUsed.length}`}>
+          {messages.map((m, i) =>
+            m.role === "user" ? (
+              <UserMessage
+                key={i}
+                content={m.content}
+                images={(m.images ?? []).filter((img) => img.url).map((img) => ({ url: img.url }))}
+              />
+            ) : (
+              <AssistantMessage
+                key={i}
+                content={m.content}
+                avatar={<AIAvatar status="idle" size={36} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />}
+                actions={
+                  <>
+                    <CopyButton text={m.content} />
+                    {voice.ttsSupported && (
+                      <button
+                        onClick={() => (voice.speaking ? voice.stopSpeaking() : voice.speak(m.content))}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-ink-800 hover:text-zinc-200"
+                        aria-label={voice.speaking ? "Stop speaking" : "Read aloud"}
+                        title={voice.speaking ? "Stop speaking" : "Read aloud"}
+                      >
+                        {voice.speaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                      </button>
                     )}
-                  </div>
-                </div>
-              )}
-            </div>
+                  </>
+                }
+              />
+            )
           )}
+          {(sending || streamed) &&
+            (streamed ? (
+              <AssistantMessage
+                content={streamed}
+                streaming
+                avatar={<AIAvatar status="generating" size={36} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />}
+              />
+            ) : (
+              <ThinkingRow
+                avatar={<AIAvatar status="thinking" size={36} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />}
+                label={`${bot.name} is thinking…`}
+              />
+            ))}
           {error && (
-            <div className="mt-4 rounded-xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm text-red-200">{error}</div>
+            <div className="rounded-[22px] border border-accent/40 bg-accent/10 px-5 py-3.5 text-sm text-red-200">{error}</div>
           )}
           {mcpUsed.length > 0 && (
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               {mcpUsed.map((u, i) => (
                 <span key={i} className="rounded-full border border-ink-700 bg-ink-900 px-2.5 py-1 font-mono text-[11px] text-zinc-300">
                   {u.server} · {u.tool}
@@ -312,18 +336,29 @@ export function BotChatView({
               ))}
             </div>
           )}
-          <div ref={bottomRef} />
-        </div>
-      </div>
+        </MessageList>
+      )}
 
       <div className="relative z-10">
-        <div className="mx-auto w-full max-w-3xl px-4 pb-5 pt-2 sm:px-6">
-          <div className="mb-2 flex items-center justify-center">
+        <div className="mx-auto w-full max-w-3xl space-y-2 px-4 pb-5 pt-2 sm:px-6">
+          <TaskPanel botSlug={bot.slug} accent={bot.theme.accent} />
+          <div className="flex items-center justify-center">
             <a href="/bots" className="inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-900 px-2.5 py-1 text-[11px] text-zinc-400 hover:text-white">
               <Plug size={11} /> My Bots
             </a>
           </div>
-          <ChatInput onSend={send} sending={sending} showModeSelector={false} placeholder={`Message ${bot.name}…`} />
+          <Composer
+            onSend={send}
+            sending={sending}
+            voiceText={voiceText}
+            onVoiceTextConsumed={() => setVoiceText("")}
+            voice={{
+              listening: voice.listening,
+              supported: voice.sttSupported,
+              onMic: () => (voice.listening ? voice.stopListening() : voice.startListening()),
+            }}
+            placeholder={`Message ${bot.name}…`}
+          />
         </div>
       </div>
     </div>

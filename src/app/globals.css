@@ -4,6 +4,20 @@
 
 :root {
   color-scheme: dark;
+  /* Human AI premium interface tokens */
+  --hai-bg: #050506;
+  --hai-surface: #0e0e12;
+  --hai-surface-2: #15151b;
+  --hai-border: rgba(255, 255, 255, 0.08);
+  --hai-text: #f4f4f5;
+  --hai-text-dim: #a1a1aa;
+  --hai-text-faint: #71717a;
+  --hai-accent: #e5484d;
+  --hai-accent-soft: rgba(229, 72, 77, 0.12);
+  --hai-radius-lg: 22px;
+  --hai-radius-xl: 28px;
+  --hai-shadow-float: 0 16px 48px rgba(0, 0, 0, 0.55);
+  --hai-glass: rgba(14, 14, 18, 0.82);
 }
 
 html,
@@ -147,6 +161,14 @@ body {
 .animate-menu-in {
   animation: menu-in 0.16s ease-out;
   transform-origin: bottom left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-dot,
+  .animate-menu-in,
+  .animate-ad-in {
+    animation: none !important;
+  }
 }
 
 @keyframes ad-in {

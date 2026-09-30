@@ -2,7 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChatInput, type PendingImage } from "@/components/ChatInput";
+import type { PendingImage } from "@/components/ChatInput";
+import { Composer } from "@/components/ai/Composer";
+import { EmptyState } from "@/components/ai/EmptyState";
+import { AIAvatar } from "@/components/ai/AIAvatar";
+import { useVoice } from "@/components/ai/useVoice";
 import type { ChatMode } from "@/components/ModeSelector";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -37,6 +41,8 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
   // Entry-point mode (/?mode=agent, /?mode=computer-use). ONE chat is created on send.
   const [mode, setMode] = useState<ChatMode>("chat");
   const [initialGoal] = useState(() => goalFromUrl());
+  const [voiceText, setVoiceText] = useState("");
+  const voice = useVoice({ onTranscript: (t) => setVoiceText((prev) => (prev ? `${prev} ${t}` : t)) });
 
   useEffect(() => {
     setMode(modeFromUrl());
@@ -97,18 +103,36 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
           </div>
         )}
       </div>
-      <div className="relative z-10 flex flex-1 items-center justify-center px-4">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-6">
         <div className="w-full max-w-2xl">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo.webp"
-            alt="Human AI"
-            className="mx-auto mb-6 h-20 w-20 rounded-3xl object-cover shadow-[0_8px_30px_rgba(0,0,0,0.5)]"
+          <EmptyState
+            avatar={<AIAvatar status={voice.listening ? "listening" : "idle"} size={88} />}
+            title="How can I help you?"
+            subtitle="Ask anything, command your computer, or send an agent to browse for you."
           />
-          <h1 className="mb-8 text-center text-5xl font-black tracking-[0.24em] text-white sm:text-7xl">
-            HUMAN AI
-          </h1>
-          <ChatInput onSend={handleSend} sending={sending} mode={mode} onModeChange={pickMode} initialText={initialGoal} />
+          <div className="mt-6">
+            <Composer
+              onSend={handleSend}
+              sending={sending}
+              mode={mode}
+              onModeChange={pickMode}
+              initialText={initialGoal}
+              voiceText={voiceText}
+              onVoiceTextConsumed={() => setVoiceText("")}
+              voice={{
+                listening: voice.listening,
+                supported: voice.sttSupported,
+                onMic: () => (voice.listening ? voice.stopListening() : voice.startListening()),
+              }}
+              placeholder={
+                mode === "agent"
+                  ? "Describe the task, e.g. Research this company…"
+                  : mode === "computer-use"
+                    ? "Describe what to do, e.g. Open ChatGPT…"
+                    : "Ask Human AI anything..."
+              }
+            />
+          </div>
         </div>
       </div>
       <footer className="relative z-10 flex items-center justify-center gap-4 px-4 py-4 text-xs text-zinc-500">
