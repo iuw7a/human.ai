@@ -17,7 +17,7 @@ export async function GET(_req: NextRequest, { params }: { params: { slug: strin
   const bot = await getOwnedBot(params.slug, user.id);
   if (!bot) return Response.json({ error: "Bot not found." }, { status: 404 });
 
-  const cmd = `@echo off\r\nrem Human Bot Desktop autostart launcher for ${bot.slug}\r\nrem Copy this file next to human-bot-${bot.slug}.ps1 and place a shortcut in shell:startup.\r\nstart "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0human-bot-${bot.slug}.ps1"\r\n`;
+  const cmd = `@echo off\r\nrem Human Bot Desktop autostart launcher for ${bot.slug}\r\nrem Copy this file next to human-bot-${bot.slug}.ps1 and place a shortcut in shell:startup.\r\nstart "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& '%~dp0human-bot-${bot.slug}.ps1'"\r\n`;
   return new Response(cmd, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",

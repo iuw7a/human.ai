@@ -27,7 +27,7 @@ export function buildCompanionScript(c: CompanionScriptInput): string {
 # ============================================================
 # Human Bot Desktop companion — Dynamic Island edition
 # Bot: ${c.slug}  Server: ${c.apiBase}
-# Run: powershell -ExecutionPolicy Bypass -File <this>.ps1
+# Run: powershell -ExecutionPolicy Bypass -Command "& '<this>.ps1'"
 # ============================================================
 $ErrorActionPreference = 'SilentlyContinue'
 
@@ -131,9 +131,7 @@ function Speak($text) {
         </Grid.ColumnDefinitions>
         <Grid Grid.Column="0" Name="AvatarWrap" Margin="9,0,0,0" HorizontalAlignment="Center" VerticalAlignment="Center">
           <Ellipse Name="AvatarRing" Stroke="__ACCENT__" StrokeThickness="2" />
-          <Ellipse Name="AvatarFace" Margin="3">
-            <Ellipse.Fill><ImageBrush Name="AvatarBrush" Stretch="UniformToFill" /></Ellipse.Fill>
-          </Ellipse>
+          <Ellipse Name="AvatarFace" Margin="3" />
           <TextBlock Name="AvatarFallback" Foreground="White" FontWeight="Bold"
             HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
         </Grid>
@@ -289,6 +287,11 @@ function Set-Dot($color) {
   $win.Dispatcher.Invoke([action]{ $pillDot.Fill = $color })
 }
 
+$conv = New-Object System.Windows.Media.BrushConverter
+function To-Brush($hex) {
+  try { return $conv.ConvertFromString($hex) } catch { return '#e5484d' }
+}
+
 function Set-Status($text, $botState) {
   $win.Dispatcher.Invoke([action]{
     $headStatus.Text = $text
@@ -298,11 +301,11 @@ function Set-Status($text, $botState) {
       $stateLine.Visibility = 'Visible'
       $stateLine.Text = $text
     }
-    if ($botState -eq 'listening') { $pillDot.Fill = '#10b981' }
-    elseif ($botState -eq 'thinking' -or $botState -eq 'responding') { $pillDot.Fill = '#e5484d' }
-    elseif ($botState -eq 'working') { $pillDot.Fill = '#f59e0b' }
-    elseif ($botState -eq 'attention') { $pillDot.Fill = '#e5484d' }
-    else { $pillDot.Fill = '#10b981' }
+    if ($botState -eq 'listening') { $pillDot.Fill = To-Brush '#10b981' }
+    elseif ($botState -eq 'thinking' -or $botState -eq 'responding') { $pillDot.Fill = To-Brush '#e5484d' }
+    elseif ($botState -eq 'working') { $pillDot.Fill = To-Brush '#f59e0b' }
+    elseif ($botState -eq 'attention') { $pillDot.Fill = To-Brush '#e5484d' }
+    else { $pillDot.Fill = To-Brush '#10b981' }
   })
   if ($botState -eq 'thinking' -or $botState -eq 'responding' -or $botState -eq 'working') {
     Start-AvatarPulse
@@ -428,16 +431,16 @@ function Restore-Island {
 function Add-Message($role, $text) {
   $win.Dispatcher.Invoke([action]{
     $b = New-Object System.Windows.Controls.Border
-    if ($role -eq 'user') { $b.CornerRadius = '12,12,4,12' } else { $b.CornerRadius = '12,12,12,4' }
+    if ($role -eq 'user') { $b.CornerRadius = New-Object System.Windows.CornerRadius(12,12,4,12) } else { $b.CornerRadius = New-Object System.Windows.CornerRadius(12,12,12,4) }
     $b.Padding = '10,7'
     $b.Margin = '0,0,0,8'
     $b.MaxWidth = 300
     if ($role -eq 'user') {
-      $b.Background = '#26262c'
+      $b.Background = To-Brush '#26262c'
       $b.HorizontalAlignment = 'Right'
     } else {
-      $b.Background = '#131316'
-      $b.BorderBrush = '#26262c'
+      $b.Background = To-Brush '#131316'
+      $b.BorderBrush = To-Brush '#26262c'
       $b.BorderThickness = '1'
       $b.HorizontalAlignment = 'Left'
     }
@@ -510,12 +513,12 @@ function Send-Chat {
       $win.Dispatcher.Invoke([action]{
         $headStatus.Text = 'Responding'
         $b = New-Object System.Windows.Controls.Border
-        $b.CornerRadius = '12,12,12,4'
+        $b.CornerRadius = New-Object System.Windows.CornerRadius(12,12,12,4)
         $b.Padding = '10,7'
         $b.Margin = '0,0,0,8'
         $b.MaxWidth = 300
-        $b.Background = '#131316'
-        $b.BorderBrush = '#26262c'
+        $b.Background = To-Brush '#131316'
+        $b.BorderBrush = To-Brush '#26262c'
         $b.BorderThickness = '1'
         $b.HorizontalAlignment = 'Left'
         $t = New-Object System.Windows.Controls.TextBlock
@@ -632,7 +635,7 @@ function Build-Island {
   $script:avatarWrap = $win.FindName('AvatarWrap')
   $script:avatarRing = $win.FindName('AvatarRing')
   $script:avatarFace = $win.FindName('AvatarFace')
-  $script:avatarBrush = $win.FindName('AvatarBrush')
+  $script:avatarBrush = $null
   $script:avatarFallback = $win.FindName('AvatarFallback')
   $script:pillName = $win.FindName('PillName')
   $script:pillDot = $win.FindName('PillDot')
@@ -651,7 +654,11 @@ function Build-Island {
     try {
       $img = New-Object System.Windows.Media.Imaging.BitmapImage
       $img.BeginInit(); $img.UriSource = $AvatarFile; $img.CacheOption = 'OnLoad'; $img.EndInit()
-      $avatarBrush.ImageSource = $img
+      $br = New-Object System.Windows.Media.ImageBrush
+      $br.ImageSource = $img
+      $br.Stretch = 'UniformToFill'
+      $avatarFace.Fill = $br
+      $script:avatarBrush = $br
     } catch {
       $avatarFallback.Text = $BotName.Substring(0, 1).ToUpper()
       $avatarFallback.Visibility = 'Visible'

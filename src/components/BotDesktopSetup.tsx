@@ -173,7 +173,7 @@ export function BotDesktopSetup({ bot }: { bot: Bot }) {
         <div className="rounded-xl bg-black/40 p-3">
           <p className="text-xs text-zinc-500">Run it (Windows PowerShell):</p>
           <code className="mt-1 block break-all font-mono text-xs leading-5 text-zinc-200">
-            powershell -ExecutionPolicy Bypass -File human-bot-{bot.slug}.ps1
+            powershell -ExecutionPolicy Bypass -Command &quot;&apos;.\human-bot-{bot.slug}.ps1&apos;&quot;
           </code>
         </div>
         <div className="rounded-xl bg-black/40 p-3">
