@@ -182,8 +182,8 @@ function Speak($text) {
             <TextBlock Name="HeadBotName" Visibility="Collapsed" />
           </StackPanel>
         </Border>
-        <ScrollViewer Grid.Row="1" Margin="12,0" Name="Scroller" VerticalScrollBarVisibility="Auto">
-          <StackPanel Name="Messages" />
+        <ScrollViewer Grid.Row="1" Margin="12,0" Name="Scroller" VerticalScrollBarVisibility="Hidden" Focusable="False">
+          <StackPanel Name="Messages" Focusable="False" />
         </ScrollViewer>
         <TextBlock Grid.Row="1" Name="HintLine" Foreground="#52525b" FontSize="13"
           HorizontalAlignment="Center" VerticalAlignment="Center" Text="Ask for anything…" IsHitTestVisible="False" />
@@ -191,9 +191,9 @@ function Speak($text) {
         <Border Grid.Row="3" Margin="12,6,12,12" CornerRadius="22" Background="#050506"
           BorderBrush="#26262C" BorderThickness="1" Padding="14,10">
           <StackPanel>
-            <DockPanel Margin="2,0,2,8" LastChildFill="True">
+            <DockPanel Name="PlanRow" Margin="2,0,2,8" LastChildFill="True" Visibility="Collapsed">
               <TextBlock Text="Plan" Foreground="#71717a" FontSize="11" Margin="0,0,8,0" VerticalAlignment="Center" />
-              <TextBlock Name="PlanLine" Foreground="White" FontSize="12" Text="Nothing planned soon" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              <TextBlock Name="PlanLine" Foreground="White" FontSize="12" Text="" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
             </DockPanel>
             <Grid>
               <Grid.ColumnDefinitions>
@@ -235,6 +235,7 @@ $pillDot = $null
 $headBotName = $null
 $eyeL = $null
 $eyeR = $null
+$planRow = $null
 $planLine = $null
 $openTasks = @()
 $chevron = $null
@@ -801,7 +802,13 @@ function Refresh-Tasks {
       if ($n -gt 1) { $plan = $plan + ' (+' + ($n - 1) + ' more)' }
     }
     $win.Dispatcher.Invoke([action]{
-      $planLine.Text = $plan
+      if ($n -gt 0) {
+        $planRow.Visibility = 'Visible'
+        $planLine.Text = $plan
+      } else {
+        # No open tasks: show no Plan row at all (never placeholder text).
+        $planRow.Visibility = 'Collapsed'
+      }
       if ($script:uiState -eq 'idle' -or $script:uiState -eq 'done' -or $script:uiState -eq $null -or $script:uiState -eq '') {
         if ($n -gt 0) { $pillSub.Text = $plan } else { $pillSub.Text = 'Ask for anything…' }
       }
@@ -827,8 +834,32 @@ function Check-DueTasks {
   } catch {}
 }
 
-function Add-TaskFromInput {
-  $title = $inputBox.Text.Trim()
+# Start a brand-new conversation: clears the visible history and mints
+# a fresh conversation id. Old chats stay stored server-side.
+function New-Conversation {
+  try {
+    $c = Api-Post ('/api/bots/' + $BotSlug + '/conversations') @{}
+    if ($c -and $c.id) {
+      $script:convId = [string]$c.id
+      $state.convId = $script:convId
+      Save-State
+      [void]$historyList.Clear()
+      $win.Dispatcher.Invoke([action]{
+        $msgStack.Children.Clear()
+        $hint = $win.FindName('HintLine')
+        if ($hint) { $hint.Visibility = 'Visible' }
+      })
+      Set-Status 'New chat started' 'done'
+      Flash-Done 0
+    } else {
+      Set-Status 'Could not start chat' 'attention'
+    }
+  } catch {
+    Set-Status 'Could not start chat' 'attention'
+  }
+}
+
+function Add-TaskFromInput {  $title = $inputBox.Text.Trim()
   if ($title -eq '') {
     Set-Status 'Type a task title first' 'attention'
     return
@@ -859,6 +890,7 @@ function Build-Island {
   $script:headBotName = $win.FindName('HeadBotName')
   $script:eyeL = $win.FindName('EyeL')
   $script:eyeR = $win.FindName('EyeR')
+  $script:planRow = $win.FindName('PlanRow')
   $script:planLine = $win.FindName('PlanLine')
   $script:pillDot = $win.FindName('PillDot')
   $script:chevron = $win.FindName('Chevron')
@@ -962,6 +994,10 @@ function Build-Island {
     }
     $sep = New-Object System.Windows.Controls.Separator
     $menu.Items.Add($sep) | Out-Null
+    $newc = New-Object System.Windows.Controls.MenuItem
+    $newc.Header = 'New chat'
+    $newc.Add_Click({ New-Conversation })
+    $menu.Items.Add($newc) | Out-Null
     $pinLabel = 'Pin above windows'
     if ($win.Topmost) { $pinLabel = 'Unpin' }
     $pin = New-Object System.Windows.Controls.MenuItem
