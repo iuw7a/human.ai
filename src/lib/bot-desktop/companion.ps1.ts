@@ -174,7 +174,7 @@ function Speak($text) {
               <Canvas>
                 <Ellipse Name="EyeL" Canvas.Left="22" Canvas.Top="26" Width="20" Height="30" Fill="White" />
                 <Ellipse Name="EyeR" Canvas.Left="54" Canvas.Top="26" Width="20" Height="30" Fill="White" />
-                <Path Stroke="White" StrokeThickness="2.5" StrokeLineCap="Round" Data="M 38,62 Q 48,69 58,62" />
+                <Path Stroke="White" StrokeThickness="2.5" Data="M 38,62 Q 48,69 58,62" />
               </Canvas>
             </Border>
             <TextBlock Name="HeadStatus" Foreground="#a1a1aa" FontSize="11" Text="Idle"
