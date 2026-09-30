@@ -1,19 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Check, Copy, Wrench, Plus, ArrowLeft, Plug, Volume2, VolumeX } from "lucide-react";
+import { Plus, ArrowLeft, Plug } from "lucide-react";
 import type { PendingImage } from "./ChatInput";
 import { createClient } from "@/lib/supabase/client";
 import type { Bot } from "@/lib/bots";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { DynamicIsland } from "./ai/DynamicIsland";
-import { AIAvatar } from "./ai/AIAvatar";
+import { MascotAvatar } from "./ai/MascotAvatar";
 import { Composer } from "./ai/Composer";
-import { UserMessage, AssistantMessage, ThinkingRow } from "./ai/Message";
+import { UserMessage, AssistantMessage, ThinkingRow, type SpeakState } from "./ai/Message";
 import { MessageList } from "./ai/MessageList";
-import { EmptyState } from "./ai/EmptyState";
 import { TaskPanel } from "./ai/TaskCard";
 import { useVoice } from "./ai/useVoice";
 import type { AIStatus } from "./ai/types";
@@ -28,28 +27,6 @@ interface UploadedImage {
   url: string;
   storagePath?: string;
   mimeType: string;
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          setDone(true);
-          setTimeout(() => setDone(false), 1500);
-        } catch {
-          // ignore
-        }
-      }}
-      className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-ink-800 hover:text-zinc-200"
-      aria-label="Copy answer"
-      title="Copy"
-    >
-      {done ? <Check size={15} /> : <Copy size={15} />}
-    </button>
-  );
 }
 
 export function BotChatView({
@@ -237,14 +214,66 @@ export function BotChatView({
     if (res.ok && j?.id) router.push(`/bot/${bot.slug}/chat?c=${j.id}`);
   }
 
+  // Stable identities so memoized children skip re-renders while streaming.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const stableSend = useCallback(
+    (text: string, images: PendingImage[]) => sendRef.current(text, images),
+    []
+  );
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
+  const toggleSpeak = useCallback((text: string) => {
+    const v = voiceRef.current;
+    if (v.speaking) v.stopSpeaking();
+    else v.speak(text);
+  }, []);
+  const micToggle = useCallback(() => {
+    const v = voiceRef.current;
+    if (v.listening) v.stopListening();
+    else v.startListening();
+  }, []);
+  const clearVoiceText = useCallback(() => setVoiceText(""), []);
+  const voiceProp = useMemo(
+    () => ({ listening: voice.listening, supported: voice.sttSupported, onMic: micToggle }),
+    [voice.listening, voice.sttSupported, micToggle]
+  );
+  const speakState: SpeakState = useMemo(
+    () => ({ supported: voice.ttsSupported, speaking: voice.speaking }),
+    [voice.ttsSupported, voice.speaking]
+  );
+
   const empty = messages.length === 0 && !streamed && !sending;
-  const msgAvatarStatus: AIStatus = voice.speaking ? "speaking" : sending ? (streamed ? "generating" : "thinking") : "idle";
+
+  // Real live activity only — never placeholder text.
+  let liveLine: string | undefined;
+  if (sending) {
+    liveLine = streamed ? "Generating…" : mcpUsed.length > 0 ? "Searching…" : "Thinking…";
+  } else if (voice.listening) {
+    liveLine = "Listening…";
+  } else if (voice.speaking) {
+    liveLine = "Speaking…";
+  } else if (completedFlash) {
+    liveLine = "Done";
+  }
+
+  const composer = (
+    <Composer
+      onSend={stableSend}
+      sending={sending}
+      voiceText={voiceText}
+      onVoiceTextConsumed={clearVoiceText}
+      voice={voiceProp}
+      statusLine={liveLine}
+      placeholder={`Message ${bot.name}…`}
+    />
+  );
 
   return (
     <div className="relative flex h-full flex-col bg-black">
       <DynamicIsland
         status={botStatus}
-        avatar={<AIAvatar status={botStatus} size={22} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />}
+        avatar={<MascotAvatar status={botStatus} size={22} accent={bot.theme.accent} />}
       />
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         {bgOk && (
@@ -255,74 +284,63 @@ export function BotChatView({
 
       <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/5 px-4 py-2.5 sm:px-6">
         <div className="flex min-w-0 items-center gap-2.5 pl-10 lg:pl-0">
-          <AIAvatar status={msgAvatarStatus} size={30} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />
+          <MascotAvatar status={botStatus === "idle" || botStatus === "completed" ? "idle" : botStatus} size={30} accent={bot.theme.accent} />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-white">{bot.name}</p>
             <p className="truncate font-mono text-[11px] text-zinc-500">/bot/{bot.slug}</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Link href={`/bot/${bot.slug}`} className="rounded-lg p-2 text-zinc-400 hover:bg-ink-800 hover:text-white" title="Bot profile">
+          <Link href={`/bot/${bot.slug}`} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title="Bot profile">
             <ArrowLeft size={16} />
           </Link>
-          <button onClick={newChat} className="rounded-lg p-2 text-zinc-400 hover:bg-ink-800 hover:text-white" title="New conversation">
+          <button onClick={newChat} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title="New conversation">
             <Plus size={16} />
           </button>
         </div>
       </div>
 
       {empty ? (
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-4">
-          <EmptyState
-            avatar={<AIAvatar status={botStatus} size={88} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />}
-            title="How can I help you?"
-            subtitle={bot.description || `Talk to ${bot.name}, your companion.`}
-          />
+        <div className="no-scrollbar relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
+          <div className="w-full max-w-2xl">
+            <div className="flex flex-col items-center text-center">
+              <MascotAvatar status={botStatus} size={120} accent={bot.theme.accent} />
+              <h1 className="mt-6 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                How can I help you?
+              </h1>
+              <p className="mt-3 max-w-md text-[15px] leading-6 text-zinc-400">
+                {bot.description || `Talk to ${bot.name}, your companion.`}
+              </p>
+            </div>
+            <div className="mt-7 space-y-2">
+              <TaskPanel botSlug={bot.slug} accent={bot.theme.accent} />
+              {composer}
+            </div>
+          </div>
         </div>
       ) : (
         <MessageList scrollKey={`${messages.length}:${streamed.length}:${mcpUsed.length}`}>
           {messages.map((m, i) =>
             m.role === "user" ? (
               <UserMessage
-                key={i}
+                key={`${conversationId}-${i}`}
                 content={m.content}
                 images={(m.images ?? []).filter((img) => img.url).map((img) => ({ url: img.url }))}
               />
             ) : (
               <AssistantMessage
-                key={i}
+                key={`${conversationId}-${i}`}
                 content={m.content}
-                avatar={<AIAvatar status="idle" size={36} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />}
-                actions={
-                  <>
-                    <CopyButton text={m.content} />
-                    {voice.ttsSupported && (
-                      <button
-                        onClick={() => (voice.speaking ? voice.stopSpeaking() : voice.speak(m.content))}
-                        className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-ink-800 hover:text-zinc-200"
-                        aria-label={voice.speaking ? "Stop speaking" : "Read aloud"}
-                        title={voice.speaking ? "Stop speaking" : "Read aloud"}
-                      >
-                        {voice.speaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                      </button>
-                    )}
-                  </>
-                }
+                speak={speakState}
+                onToggleSpeak={toggleSpeak}
               />
             )
           )}
           {(sending || streamed) &&
             (streamed ? (
-              <AssistantMessage
-                content={streamed}
-                streaming
-                avatar={<AIAvatar status="generating" size={36} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />}
-              />
+              <AssistantMessage content={streamed} streaming />
             ) : (
-              <ThinkingRow
-                avatar={<AIAvatar status="thinking" size={36} imageSrc={bot.avatar_url} name={bot.name} accent={bot.theme.accent} />}
-                label={`${bot.name} is thinking…`}
-              />
+              <ThinkingRow label={`${bot.name} is thinking…`} />
             ))}
           {error && (
             <div className="rounded-[22px] border border-accent/40 bg-accent/10 px-5 py-3.5 text-sm text-red-200">{error}</div>
@@ -339,28 +357,19 @@ export function BotChatView({
         </MessageList>
       )}
 
-      <div className="relative z-10">
-        <div className="mx-auto w-full max-w-3xl space-y-2 px-4 pb-5 pt-2 sm:px-6">
-          <TaskPanel botSlug={bot.slug} accent={bot.theme.accent} />
-          <div className="flex items-center justify-center">
-            <a href="/bots" className="inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-900 px-2.5 py-1 text-[11px] text-zinc-400 hover:text-white">
-              <Plug size={11} /> My Bots
-            </a>
+      {!empty && (
+        <div className="relative z-10">
+          <div className="mx-auto w-full max-w-3xl space-y-2 px-4 pb-5 pt-2 sm:px-6">
+            <TaskPanel botSlug={bot.slug} accent={bot.theme.accent} />
+            <div className="flex items-center justify-center">
+              <a href="/bots" className="inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-900 px-2.5 py-1 text-[11px] text-zinc-400 transition-colors hover:text-white">
+                <Plug size={11} /> My Bots
+              </a>
+            </div>
+            {composer}
           </div>
-          <Composer
-            onSend={send}
-            sending={sending}
-            voiceText={voiceText}
-            onVoiceTextConsumed={() => setVoiceText("")}
-            voice={{
-              listening: voice.listening,
-              supported: voice.sttSupported,
-              onMic: () => (voice.listening ? voice.stopListening() : voice.startListening()),
-            }}
-            placeholder={`Message ${bot.name}…`}
-          />
         </div>
-      </div>
+      )}
     </div>
   );
 }

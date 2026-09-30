@@ -1,19 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, ThumbsUp, ThumbsDown, Globe, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown, Sparkles, Volume2, VolumeX } from "lucide-react";
+import { Check, Globe, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
 import type { PendingImage } from "./ChatInput";
 import { createClient } from "@/lib/supabase/client";
 import { getModel } from "@/lib/models";
 import type { ChatMode } from "./ModeSelector";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { DynamicIsland } from "./ai/DynamicIsland";
-import { AIAvatar } from "./ai/AIAvatar";
+import { MascotAvatar } from "./ai/MascotAvatar";
 import { Composer } from "./ai/Composer";
-import { UserMessage, AssistantMessage, ThinkingRow } from "./ai/Message";
+import { UserMessage, AssistantMessage, ThinkingRow, type SpeakState } from "./ai/Message";
 import { MessageList } from "./ai/MessageList";
-import { EmptyState } from "./ai/EmptyState";
 import { useVoice } from "./ai/useVoice";
 import type { AIStatus } from "./ai/types";
 
@@ -24,33 +23,34 @@ export interface StoredMessage {
   images?: { url: string; storagePath?: string }[];
 }
 
-function VoteButtons({ chatId, modelId, excerpt }: { chatId: string; modelId: string; excerpt: string }) {
-  const [voted, setVoted] = useState<"up" | "down" | null>(null);
-  async function vote(rating: "up" | "down") {
-    setVoted(rating);
-    try {
-      await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, model: modelId, rating, excerpt: excerpt.slice(0, 500) }),
-      });
-    } catch {
-      // feedback is optional
-    }
-  }
-  const cls = (active: boolean) =>
-    `flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-ink-800 ${
-      active ? "text-accent" : "text-zinc-500 hover:text-zinc-200"
-    }`;
+function ChromeChips({ servers }: { servers: { id: string; name: string }[] }) {
   return (
-    <>
-      <button onClick={() => vote("up")} className={cls(voted === "up")} aria-label="Good answer" title="Good answer">
-        <ThumbsUp size={14} />
-      </button>
-      <button onClick={() => vote("down")} className={cls(voted === "down")} aria-label="Bad answer" title="Bad answer">
-        <ThumbsDown size={14} />
-      </button>
-    </>
+    <div className="mb-2 flex flex-wrap items-center justify-center gap-1.5">
+      {servers.map((s) => (
+        <a
+          key={s.id}
+          href={`/mcp/${s.id}`}
+          title={`${s.name} connected — manage`}
+          className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20"
+        >
+          <Plug size={11} /> {s.name}
+        </a>
+      ))}
+      {servers.length > 0 && (
+        <a href="/mcp" title="Browse MCP Marketplace" className="text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-200 hover:underline">
+          + Add
+        </a>
+      )}
+      <a
+        href="https://barada.cloud/"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Try Barada AI"
+        className="inline-flex items-center gap-1.5 rounded-full border border-accent/50 bg-accent/10 px-2.5 py-1 text-[11px] font-medium text-red-100 transition-colors hover:bg-accent/20"
+      >
+        <Sparkles size={11} /> Try Barada AI
+      </a>
+    </div>
   );
 }
 
@@ -153,28 +153,6 @@ interface UploadedImage {
   url: string;
   storagePath?: string;
   mimeType: string;
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          setDone(true);
-          setTimeout(() => setDone(false), 1500);
-        } catch {
-          // clipboard unavailable
-        }
-      }}
-      className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-ink-800 hover:text-zinc-200"
-      aria-label="Copy answer"
-      title="Copy"
-    >
-      {done ? <Check size={15} /> : <Copy size={15} />}
-    </button>
-  );
 }
 
 interface ActivityStep {
@@ -361,10 +339,10 @@ export function ChatView({
   const [completedFlash, setCompletedFlash] = useState(false);
   const prevSendingRef = useRef(false);
 
-  function changeMode(m: ChatMode) {
+  const changeMode = useCallback((m: ChatMode) => {
     modeRef.current = m;
     setMode(m);
-  }
+  }, []);
 
   const model = getModel(modelId);
   const title =
@@ -929,15 +907,63 @@ export function ChatView({
     );
   }
 
+  // Stable identities so memoized children (messages, composer) skip
+  // re-renders while tokens stream in. The send logic itself is untouched.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const stableSend = useCallback(
+    (text: string, images: PendingImage[], modeOverride?: ChatMode) =>
+      sendRef.current(text, images, modeOverride),
+    []
+  );
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
+  const toggleSpeak = useCallback((text: string) => {
+    const v = voiceRef.current;
+    if (v.speaking) v.stopSpeaking();
+    else v.speak(text);
+  }, []);
+  const micToggle = useCallback(() => {
+    const v = voiceRef.current;
+    if (v.listening) v.stopListening();
+    else v.startListening();
+  }, []);
+  const clearVoiceText = useCallback(() => setVoiceText(""), []);
+  const voiceProp = useMemo(
+    () => ({ listening: voice.listening, supported: voice.sttSupported, onMic: micToggle }),
+    [voice.listening, voice.sttSupported, micToggle]
+  );
+  const speakState: SpeakState = useMemo(
+    () => ({ supported: voice.ttsSupported, speaking: voice.speaking }),
+    [voice.ttsSupported, voice.speaking]
+  );
+  const voteMeta = useMemo(
+    () => (flags.feedback !== false && user ? { chatId, modelId } : null),
+    [flags.feedback, user, chatId, modelId]
+  );
+
+  // Real live activity only — never placeholder text.
+  let liveLine: string | undefined;
+  if (activity && !activity.doneText) {
+    liveLine = activity.approval ? "Needs approval" : activity.status;
+  } else if (sending) {
+    liveLine = streamed ? "Generating response…" : mcpUsed.length > 0 ? "Searching the web…" : "Thinking…";
+  } else if (voice.listening) {
+    liveLine = "Listening…";
+  } else if (voice.speaking) {
+    liveLine = "Speaking…";
+  } else if (completedFlash) {
+    liveLine = "Done";
+  }
+
   const empty = messages.length === 0 && !streamed && !sending;
   const { status: islandStatus, text: islandText } = aiStatus();
-  const avatarStatus: AIStatus = voice.speaking
-    ? "speaking"
-    : sending
-      ? streamed
-        ? "generating"
-        : "thinking"
-      : "idle";
+  const composerPlaceholder =
+    mode === "agent"
+      ? "Describe the task, e.g. Research this company and summarize it…"
+      : mode === "computer-use"
+        ? "Describe what to do on the computer, e.g. Open ChatGPT…"
+        : "Ask Human AI anything...";
 
   return (
     <div className="relative flex h-full flex-col bg-black">
@@ -953,160 +979,129 @@ export function ChatView({
           />
         )}
       </div>
-      <div className="relative z-10 flex items-center justify-between px-4 py-3 sm:px-6">
-        <p className="max-w-[60%] truncate pl-10 text-sm font-medium text-zinc-200 lg:pl-0">
-          {title}
-        </p>
-        {!user && (
-          <a href="/login" className="text-xs text-zinc-400 hover:text-white">
-            Log in to save chats
-          </a>
-        )}
-      </div>
 
       {empty ? (
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-4">
-          <EmptyState
-            avatar={<AIAvatar status={islandStatus === "idle" ? "idle" : islandStatus} size={88} />}
-            title="How can I help you?"
-            subtitle="Ask anything. Attach an image to analyze it."
-          />
+        <div className="no-scrollbar relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
+          <div className="w-full max-w-2xl">
+            <div className="flex flex-col items-center text-center">
+              <MascotAvatar status={islandStatus} size={120} />
+              <h1 className="mt-6 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                How can I help you?
+              </h1>
+              <p className="mt-3 max-w-md text-[15px] leading-6 text-zinc-400">
+                Ask anything. Attach an image to analyze it.
+              </p>
+            </div>
+            <div className="mt-7">
+              <ChromeChips servers={mcpServers} />
+              <Composer
+                onSend={stableSend}
+                sending={sending}
+                allowUpload={flags.image_generation !== false}
+                mode={mode}
+                onModeChange={changeMode}
+                voiceText={voiceText}
+                onVoiceTextConsumed={clearVoiceText}
+                voice={voiceProp}
+                statusLine={liveLine}
+                placeholder={composerPlaceholder}
+              />
+            </div>
+          </div>
         </div>
       ) : (
-        <MessageList
-          scrollKey={`${messages.length}:${streamed.length}:${activity?.steps.length ?? 0}:${activity?.status ?? ""}:${mcpUsed.length}`}
-        >
-          {messages.map((m, i) =>
-            m.role === "user" ? (
-              <UserMessage
-                key={i}
-                content={m.content}
-                images={(m.images ?? []).filter((img) => img.url).map((img) => ({ url: img.url }))}
-              />
-            ) : (
-              <AssistantMessage
-                key={i}
-                content={m.content}
-                avatar={<AIAvatar status="idle" size={36} />}
-                actions={
-                  <>
-                    <CopyButton text={m.content} />
-                    {voice.ttsSupported && (
-                      <button
-                        onClick={() => (voice.speaking ? voice.stopSpeaking() : voice.speak(m.content))}
-                        className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-ink-800 hover:text-zinc-200"
-                        aria-label={voice.speaking ? "Stop speaking" : "Read aloud"}
-                        title={voice.speaking ? "Stop speaking" : "Read aloud"}
-                      >
-                        {voice.speaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                      </button>
-                    )}
-                    {flags.feedback !== false && user && (
-                      <VoteButtons chatId={chatId} modelId={modelId} excerpt={m.content} />
-                    )}
-                  </>
-                }
-              />
-            )
-          )}
-
-          {(sending || streamed) && !activity && (
-            streamed ? (
-              <AssistantMessage
-                content={streamed}
-                streaming
-                avatar={<AIAvatar status="generating" size={36} />}
-              />
-            ) : (
-              <ThinkingRow avatar={<AIAvatar status="thinking" size={36} />} />
-            )
-          )}
-
-          {error && (
-            <div className="rounded-[22px] border border-accent/40 bg-accent/10 px-5 py-3.5 text-sm text-red-200">
-              {error}
-            </div>
-          )}
-          {activity && (
-            <ModeActivityCard
-              activity={activity}
-              onApprove={() => decideApproval(true)}
-              onReject={() => decideApproval(false)}
-              onStop={stopRun}
-              onRelease={releaseComputer}
-              onDismiss={() => setActivity(null)}
-            />
-          )}
-          {ad && !adDismissed && messages.length > 0 && (
-            <AdCard ad={ad} onDismiss={() => setAdDismissed(true)} />
-          )}
-          {mcpUsed.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Wrench size={13} className="text-zinc-500" />
-              {mcpUsed.map((u, i) => (
-                <span
-                  key={i}
-                  className="rounded-full border border-ink-700 bg-ink-900 px-2.5 py-1 font-mono text-[11px] text-zinc-300"
-                >
-                  {u.server} · {u.tool}
-                </span>
-              ))}
-            </div>
-          )}
-        </MessageList>
-      )}
-
-      <div className="relative z-10">
-        <div className="mx-auto w-full max-w-3xl px-4 pb-5 pt-2 sm:px-6">
-          <div className="mb-2 flex flex-wrap items-center justify-center gap-1.5">
-            {mcpServers.map((s) => (
-              <a
-                key={s.id}
-                href={`/mcp/${s.id}`}
-                title={`${s.name} connected — manage`}
-                className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20"
-              >
-                <Plug size={11} /> {s.name}
-              </a>
-            ))}
-            {mcpServers.length > 0 && (
-              <a href="/mcp" title="Browse MCP Marketplace" className="text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-200 hover:underline">
-                + Add
+        <>
+          <div className="relative z-10 flex items-center justify-between px-4 py-3 sm:px-6">
+            <p className="max-w-[60%] truncate pl-10 text-sm font-medium text-zinc-200 lg:pl-0">
+              {title}
+            </p>
+            {!user && (
+              <a href="/login" className="text-xs text-zinc-400 hover:text-white">
+                Log in to save chats
               </a>
             )}
-            <a
-              href="https://barada.cloud/"
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Try Barada AI"
-              className="inline-flex items-center gap-1.5 rounded-full border border-accent/50 bg-accent/10 px-2.5 py-1 text-[11px] font-medium text-red-100 transition-colors hover:bg-accent/20"
-            >
-              <Sparkles size={11} /> Try Barada AI
-            </a>
           </div>
-          <Composer
-            onSend={send}
-            sending={sending}
-            allowUpload={flags.image_generation !== false}
-            mode={mode}
-            onModeChange={changeMode}
-            voiceText={voiceText}
-            onVoiceTextConsumed={() => setVoiceText("")}
-            voice={{
-              listening: voice.listening,
-              supported: voice.sttSupported,
-              onMic: () => (voice.listening ? voice.stopListening() : voice.startListening()),
-            }}
-            placeholder={
-              mode === "agent"
-                ? "Describe the task, e.g. Research this company and summarize it…"
-                : mode === "computer-use"
-                  ? "Describe what to do on the computer, e.g. Open ChatGPT…"
-                  : "Ask Human AI anything..."
-            }
-          />
-        </div>
-      </div>
+          <MessageList
+            scrollKey={`${messages.length}:${streamed.length}:${activity?.steps.length ?? 0}:${activity?.status ?? ""}:${mcpUsed.length}`}
+          >
+            {messages.map((m, i) =>
+              m.role === "user" ? (
+                <UserMessage
+                  key={`${chatId}-${i}`}
+                  content={m.content}
+                  images={(m.images ?? []).filter((img) => img.url).map((img) => ({ url: img.url }))}
+                />
+              ) : (
+                <AssistantMessage
+                  key={`${chatId}-${i}`}
+                  content={m.content}
+                  speak={speakState}
+                  onToggleSpeak={toggleSpeak}
+                  vote={voteMeta}
+                />
+              )
+            )}
+
+            {(sending || streamed) && !activity && (
+              streamed ? (
+                <AssistantMessage content={streamed} streaming />
+              ) : (
+                <ThinkingRow />
+              )
+            )}
+
+            {error && (
+              <div className="rounded-[22px] border border-accent/40 bg-accent/10 px-5 py-3.5 text-sm text-red-200">
+                {error}
+              </div>
+            )}
+            {activity && (
+              <ModeActivityCard
+                activity={activity}
+                onApprove={() => decideApproval(true)}
+                onReject={() => decideApproval(false)}
+                onStop={stopRun}
+                onRelease={releaseComputer}
+                onDismiss={() => setActivity(null)}
+              />
+            )}
+            {ad && !adDismissed && messages.length > 0 && (
+              <AdCard ad={ad} onDismiss={() => setAdDismissed(true)} />
+            )}
+            {mcpUsed.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Wrench size={13} className="text-zinc-500" />
+                {mcpUsed.map((u, i) => (
+                  <span
+                    key={i}
+                    className="rounded-full border border-ink-700 bg-ink-900 px-2.5 py-1 font-mono text-[11px] text-zinc-300"
+                  >
+                    {u.server} · {u.tool}
+                  </span>
+                ))}
+              </div>
+            )}
+          </MessageList>
+
+          <div className="relative z-10">
+            <div className="mx-auto w-full max-w-3xl px-4 pb-5 pt-2 sm:px-6">
+              <ChromeChips servers={mcpServers} />
+              <Composer
+                onSend={stableSend}
+                sending={sending}
+                allowUpload={flags.image_generation !== false}
+                mode={mode}
+                onModeChange={changeMode}
+                voiceText={voiceText}
+                onVoiceTextConsumed={clearVoiceText}
+                voice={voiceProp}
+                statusLine={liveLine}
+                placeholder={composerPlaceholder}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

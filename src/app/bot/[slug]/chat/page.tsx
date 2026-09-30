@@ -107,7 +107,7 @@ export default async function BotChatPage({
 
   return (
     <AppShell>
-      <BotChatView bot={bot} user={user} conversationId={convId} initialMessages={initialMessages} />
+      <BotChatView key={`${bot.slug}-${convId}`} bot={bot} user={user} conversationId={convId} initialMessages={initialMessages} />
     </AppShell>
   );
 }

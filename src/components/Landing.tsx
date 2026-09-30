@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import type { PendingImage } from "@/components/ChatInput";
 import { Composer } from "@/components/ai/Composer";
 import { EmptyState } from "@/components/ai/EmptyState";
-import { AIAvatar } from "@/components/ai/AIAvatar";
+import { MascotAvatar } from "@/components/ai/MascotAvatar";
 import { useVoice } from "@/components/ai/useVoice";
 import type { ChatMode } from "@/components/ModeSelector";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
@@ -106,7 +106,7 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
       <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-6">
         <div className="w-full max-w-2xl">
           <EmptyState
-            avatar={<AIAvatar status={voice.listening ? "listening" : "idle"} size={88} />}
+            avatar={<MascotAvatar status={voice.listening ? "listening" : "idle"} size={120} />}
             title="How can I help you?"
             subtitle="Ask anything, command your computer, or send an agent to browse for you."
           />

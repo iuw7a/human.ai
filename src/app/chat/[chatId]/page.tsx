@@ -25,6 +25,7 @@ export default async function ChatPage({ params }: PageProps) {
   return (
     <AppShell>
       <ChatView
+        key={chatId}
         chatId={chatId}
         modelId={modelId}
         user={user}

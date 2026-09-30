@@ -82,6 +82,18 @@ body {
   }
 }
 
+@layer utilities {
+  /* Chat scroll areas: keep scrolling, never show a browser scrollbar. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    overscroll-behavior: contain;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 .prose-humanai {
   @apply text-[15px] leading-7 text-zinc-200;
 }

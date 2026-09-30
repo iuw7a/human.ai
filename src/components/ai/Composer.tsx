@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowUp, ImagePlus, Loader2, Mic, MicOff, X } from "lucide-react";
 import { ModeSelector, type ChatMode } from "../ModeSelector";
@@ -45,9 +45,11 @@ function ToolButton({
 
 /**
  * Large floating command composer. Same send contract as ChatInput
- * (text + images), restyled as a premium command bar.
+ * (text + images), styled as a premium command pill.
+ * `statusLine` is shown only when there is REAL live activity
+ * (thinking / generating / listening / task status) — never placeholder text.
  */
-export function Composer({
+export const Composer = memo(function Composer({
   onSend,
   sending,
   placeholder = "Ask Human AI anything...",
@@ -58,6 +60,7 @@ export function Composer({
   voiceText,
   onVoiceTextConsumed,
   voice,
+  statusLine,
 }: {
   onSend: (text: string, images: PendingImage[]) => void;
   sending: boolean;
@@ -73,6 +76,7 @@ export function Composer({
     supported: boolean;
     onMic: () => void;
   };
+  statusLine?: string;
 }) {
   const [text, setText] = useState(initialText);
   const [images, setImages] = useState<PendingImage[]>([]);
@@ -142,15 +146,21 @@ export function Composer({
         </p>
       )}
       <motion.div
-        className="rounded-[28px] border bg-[#0e0e12]/90 p-3 shadow-[0_16px_48px_rgba(0,0,0,0.55)] backdrop-blur-xl sm:p-4"
+        className="rounded-[26px] border border-white/[0.09] bg-[#0a0a0d]/95 p-3 shadow-[0_16px_48px_rgba(0,0,0,0.6)] backdrop-blur-xl sm:p-3.5"
         animate={{
           borderColor: focused ? "rgba(229,72,77,0.45)" : "rgba(255,255,255,0.09)",
           boxShadow: focused
-            ? "0 16px 48px rgba(0,0,0,0.55), 0 0 0 1px rgba(229,72,77,0.25), 0 0 32px rgba(229,72,77,0.12)"
-            : "0 16px 48px rgba(0,0,0,0.55)",
+            ? "0 16px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(229,72,77,0.25), 0 0 32px rgba(229,72,77,0.12)"
+            : "0 16px 48px rgba(0,0,0,0.6)",
         }}
         transition={{ duration: 0.22 }}
       >
+        {statusLine && (
+          <div className="flex items-center gap-2 px-2 pb-2 pt-0.5" aria-live="polite">
+            <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />
+            <p className="truncate text-xs text-zinc-400">{statusLine}</p>
+          </div>
+        )}
         {images.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2 px-1 pt-1">
             {images.map((img, i) => (
@@ -183,7 +193,7 @@ export function Composer({
               submit();
             }
           }}
-          rows={2}
+          rows={1}
           placeholder={placeholder}
           aria-label="Message Human AI"
           className="max-h-[200px] w-full resize-none bg-transparent px-2 py-1 text-[15px] leading-6 text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
@@ -222,6 +232,7 @@ export function Composer({
             onClick={submit}
             disabled={sending || (!text.trim() && images.length === 0)}
             whileTap={{ scale: 0.9 }}
+            transition={{ duration: 0.12 }}
             className="btn-send !h-10 !w-10"
             aria-label="Send message"
           >
@@ -229,9 +240,6 @@ export function Composer({
           </motion.button>
         </div>
       </motion.div>
-      <p className="mt-2 text-center text-xs text-zinc-500">
-        Human AI can make mistakes. Verify important information.
-      </p>
     </div>
   );
-}
+})
