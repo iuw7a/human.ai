@@ -169,12 +169,16 @@ function Speak($text) {
         </Grid.RowDefinitions>
         <Border Grid.Row="0" Background="#00000000" Padding="0,16,0,8" Name="HeadDrag">
           <StackPanel HorizontalAlignment="Center">
-            <Border Width="96" Height="88" CornerRadius="26" Background="#050506"
+            <Border Name="Mascot" Width="96" Height="88" CornerRadius="26" Background="#050506"
               BorderBrush="#26262C" BorderThickness="1" HorizontalAlignment="Center">
+              <Border.RenderTransform>
+                <RotateTransform CenterX="48" CenterY="44" Angle="0" />
+              </Border.RenderTransform>
               <Canvas>
                 <Ellipse Name="EyeL" Canvas.Left="22" Canvas.Top="26" Width="20" Height="30" Fill="White" />
                 <Ellipse Name="EyeR" Canvas.Left="54" Canvas.Top="26" Width="20" Height="30" Fill="White" />
-                <Path Stroke="White" StrokeThickness="2.5" Data="M 38,62 Q 48,69 58,62" />
+                <Path Name="Smile" Stroke="White" StrokeThickness="2.5" Data="M 38,62 Q 48,69 58,62" />
+                <Ellipse Name="MouthOpen" Canvas.Left="42" Canvas.Top="60" Width="16" Height="13" Fill="White" Visibility="Collapsed" />
               </Canvas>
             </Border>
             <TextBlock Name="HeadStatus" Foreground="#a1a1aa" FontSize="11" Text="Idle"
@@ -235,6 +239,9 @@ $pillDot = $null
 $headBotName = $null
 $eyeL = $null
 $eyeR = $null
+$mascot = $null
+$smile = $null
+$mouthOpen = $null
 $planRow = $null
 $planLine = $null
 $openTasks = @()
@@ -388,6 +395,7 @@ $blinkTimer = New-Object System.Windows.Threading.DispatcherTimer
 $blinkTimer.Interval = [TimeSpan]::FromMilliseconds(3400)
 $blinkTimer.Add_Tick({
   if (-not $expanded) { return }
+  if ($script:uiState -eq 'speaking' -or $script:uiState -eq 'listening') { return }
   try {
     $eyeL.Height = 4
     $eyeR.Height = 4
@@ -397,6 +405,47 @@ $blinkTimer.Add_Tick({
   } catch {}
 })
 $blinkTimer.Start()
+
+# Mascot state reactions: gentle tilt while thinking/working, talking
+# mouth while speaking, wide eyes while listening. Subtle by design.
+$mascotTimer = New-Object System.Windows.Threading.DispatcherTimer
+$mascotTimer.Interval = [TimeSpan]::FromMilliseconds(140)
+$script:mascotPhase = $false
+$mascotTimer.Add_Tick({
+  try {
+    if (-not $expanded) { return }
+    $st = $script:uiState
+    if ($st -eq 'thinking' -or $st -eq 'responding' -or $st -eq 'working') {
+      $mascot.RenderTransform.Angle = [Math]::Sin([DateTime]::UtcNow.Millisecond / 300.0) * 2.5
+      $eyeL.Height = 30
+      $eyeR.Height = 30
+      $smile.Visibility = 'Visible'
+      $mouthOpen.Visibility = 'Collapsed'
+    } elseif ($st -eq 'speaking') {
+      $script:mascotPhase = -not $script:mascotPhase
+      $mascot.RenderTransform.Angle = 0
+      if ($script:mascotPhase) { $smile.Visibility = 'Collapsed'; $mouthOpen.Visibility = 'Visible' }
+      else { $smile.Visibility = 'Visible'; $mouthOpen.Visibility = 'Collapsed' }
+    } elseif ($st -eq 'listening') {
+      $mascot.RenderTransform.Angle = 0
+      $eyeL.Height = 34
+      $eyeR.Height = 34
+      $eyeL.SetValue([System.Windows.Controls.Canvas]::TopProperty, 24.0)
+      $eyeR.SetValue([System.Windows.Controls.Canvas]::TopProperty, 24.0)
+      $smile.Visibility = 'Visible'
+      $mouthOpen.Visibility = 'Collapsed'
+    } else {
+      $mascot.RenderTransform.Angle = 0
+      $eyeL.Height = 30
+      $eyeR.Height = 30
+      $eyeL.SetValue([System.Windows.Controls.Canvas]::TopProperty, 26.0)
+      $eyeR.SetValue([System.Windows.Controls.Canvas]::TopProperty, 26.0)
+      $smile.Visibility = 'Visible'
+      $mouthOpen.Visibility = 'Collapsed'
+    }
+  } catch {}
+})
+$mascotTimer.Start()
 
 $dotsTimer = New-Object System.Windows.Threading.DispatcherTimer
 $dotsTimer.Interval = [TimeSpan]::FromMilliseconds(380)
@@ -540,25 +589,37 @@ function Restore-Island {
   Api-Patch ('/api/bots/' + $BotSlug + '/companion') @{ hidden = $false } | Out-Null
 }
 
+function Fade-In($el) {
+  try {
+    $f = New-Object System.Windows.Media.Animation.DoubleAnimation(0, 1, (New-Object System.Windows.Duration([TimeSpan]::FromMilliseconds(200))))
+    $el.BeginAnimation([System.Windows.Controls.Border]::OpacityProperty, $f) | Out-Null
+  } catch {}
+}
+
 function Add-Message($role, $text) {
   $win.Dispatcher.Invoke([action]{
     $hint = $win.FindName('HintLine')
     if ($hint) { $hint.Visibility = 'Collapsed' }
     $b = New-Object System.Windows.Controls.Border
-    if ($role -eq 'user') { $b.CornerRadius = New-Object System.Windows.CornerRadius(18,18,6,18) } else { $b.CornerRadius = New-Object System.Windows.CornerRadius(18,18,18,6) }
-    $b.Padding = '12,10'
-    $b.Margin = '0,0,0,8'
-    $b.MaxWidth = 312
     if ($role -eq 'user') {
-      $b.Background = To-Brush '#15151B'
+      # User: right-aligned bubble, clearly distinct from AI text.
+      $b.CornerRadius = New-Object System.Windows.CornerRadius(18,18,6,18)
+      $b.Padding = '12,10'
+      $b.Margin = '0,0,0,8'
+      $b.MaxWidth = 300
+      $b.Background = To-Brush '#1B1B21'
       $b.BorderBrush = To-Brush '#2E2E35'
       $b.BorderThickness = '1'
       $b.HorizontalAlignment = 'Right'
     } else {
-      $b.Background = To-Brush '#101014'
-      $b.BorderBrush = To-Brush '#26262c'
-      $b.BorderThickness = '1'
-      $b.HorizontalAlignment = 'Left'
+      # AI: clean full-width text row, no box.
+      $b.CornerRadius = New-Object System.Windows.CornerRadius(0)
+      $b.Padding = '2,6'
+      $b.Margin = '0,0,0,10'
+      $b.MaxWidth = 340
+      $b.Background = To-Brush '#00000000'
+      $b.BorderThickness = '0'
+      $b.HorizontalAlignment = 'Stretch'
     }
     $t = New-Object System.Windows.Controls.TextBlock
     $t.Text = $text
@@ -567,6 +628,7 @@ function Add-Message($role, $text) {
     $t.TextWrapping = 'Wrap'
     $b.Child = $t
     $msgStack.Children.Add($b) | Out-Null
+    Fade-In $b
     $scroller.ScrollToBottom()
   })
 }
@@ -612,7 +674,7 @@ function Send-Chat {
     $msgs += @{ role = $m.role; content = $m.content }
   }
   $body = @{ conversation_id = $convId; messages = $msgs } | ConvertTo-Json -Depth 6
-  $botBg = To-Brush '#101014'
+  $botBg = To-Brush '#00000000'
   $botBd = To-Brush '#26262c'
   try { $botBg.Freeze(); $botBd.Freeze() } catch {}
   Write-BootLog 'm-body'
@@ -637,20 +699,23 @@ function Send-Chat {
       $win.Dispatcher.Invoke([action]{
         $headStatus.Text = 'Generating...'
         $b = New-Object System.Windows.Controls.Border
-        $b.CornerRadius = New-Object System.Windows.CornerRadius(18,18,18,6)
-        $b.Padding = '12,10'
-        $b.Margin = '0,0,0,8'
-        $b.MaxWidth = 312
+        $b.CornerRadius = New-Object System.Windows.CornerRadius(0)
+        $b.Padding = '2,6'
+        $b.Margin = '0,0,0,10'
+        $b.MaxWidth = 340
         $b.Background = $bgBrush
-        $b.BorderBrush = $bdBrush
-        $b.BorderThickness = '1'
-        $b.HorizontalAlignment = 'Left'
+        $b.BorderThickness = '0'
+        $b.HorizontalAlignment = 'Stretch'
         $t = New-Object System.Windows.Controls.TextBlock
         $t.Foreground = 'White'
         $t.FontSize = 13
         $t.TextWrapping = 'Wrap'
         $b.Child = $t
         $msgStack.Children.Add($b) | Out-Null
+        try {
+          $fa = New-Object System.Windows.Media.Animation.DoubleAnimation(0, 1, (New-Object System.Windows.Duration([TimeSpan]::FromMilliseconds(200))))
+          $b.BeginAnimation([System.Windows.Controls.Border]::OpacityProperty, $fa) | Out-Null
+        } catch {}
         $scroller.ScrollToBottom()
         $sync.tb = $t
       })
@@ -845,6 +910,7 @@ function New-Conversation {
       Save-State
       [void]$historyList.Clear()
       $win.Dispatcher.Invoke([action]{
+        $inputBox.Text = ''
         $msgStack.Children.Clear()
         $hint = $win.FindName('HintLine')
         if ($hint) { $hint.Visibility = 'Visible' }
@@ -857,6 +923,38 @@ function New-Conversation {
   } catch {
     Set-Status 'Could not start chat' 'attention'
   }
+}
+
+# Switch to an existing conversation by id: loads exactly that chat's
+# messages, nothing else. Old chats stay stored server-side.
+function Switch-Conversation($id) {
+  $id = [string]$id
+  if ($id -eq '' -or $id -eq $script:convId) { return }
+  $h = Api-Get ('/api/bots/' + $BotSlug + '/conversations/' + $id)
+  if (-not $h) {
+    Set-Status 'Could not open chat' 'attention'
+    return
+  }
+  $script:convId = $id
+  $state.convId = $id
+  Save-State
+  [void]$historyList.Clear()
+  $win.Dispatcher.Invoke([action]{ $msgStack.Children.Clear() })
+  if ($h.messages) {
+    foreach ($m in $h.messages | Select-Object -Last 20) {
+      [void]$historyList.Add(@{ role = [string]$m.role; content = [string]$m.content })
+      Add-Message $m.role $m.content
+    }
+  }
+  $win.Dispatcher.Invoke([action]{
+    $hint = $win.FindName('HintLine')
+    if ($hint) {
+      if ($msgStack.Children.Count -gt 0) { $hint.Visibility = 'Collapsed' }
+      else { $hint.Visibility = 'Visible' }
+    }
+  })
+  Set-Status 'Chat opened' 'done'
+  Flash-Done 0
 }
 
 function Add-TaskFromInput {  $title = $inputBox.Text.Trim()
@@ -890,6 +988,9 @@ function Build-Island {
   $script:headBotName = $win.FindName('HeadBotName')
   $script:eyeL = $win.FindName('EyeL')
   $script:eyeR = $win.FindName('EyeR')
+  $script:mascot = $win.FindName('Mascot')
+  $script:smile = $win.FindName('Smile')
+  $script:mouthOpen = $win.FindName('MouthOpen')
   $script:planRow = $win.FindName('PlanRow')
   $script:planLine = $win.FindName('PlanLine')
   $script:pillDot = $win.FindName('PillDot')
@@ -998,6 +1099,33 @@ function Build-Island {
     $newc.Header = 'New chat'
     $newc.Add_Click({ New-Conversation })
     $menu.Items.Add($newc) | Out-Null
+    $chatsItem = New-Object System.Windows.Controls.MenuItem
+    $chatsItem.Header = 'Recent chats'
+    try {
+      $list = Api-Get ('/api/bots/' + $BotSlug + '/conversations')
+      $convs = @()
+      if ($list -and $list.conversations) { $convs = @($list.conversations | Select-Object -First 8) }
+      if ($convs.Count -eq 0) {
+        $none = New-Object System.Windows.Controls.MenuItem
+        $none.Header = '(no chats yet)'
+        $none.IsEnabled = $false
+        $chatsItem.Items.Add($none) | Out-Null
+      }
+      foreach ($cv in $convs) {
+        $ci = New-Object System.Windows.Controls.MenuItem
+        $t = [string]$cv.title
+        if ($t -eq '' -or $t -eq 'New conversation') {
+          try { $t = ([DateTime]$cv.updated_at).ToString('g') } catch { $t = [string]$cv.id }
+        }
+        if ($t.Length -gt 32) { $t = $t.Substring(0, 32) + '…' }
+        if ([string]$cv.id -eq $script:convId) { $t = '● ' + $t }
+        $ci.Header = $t
+        $ci.Tag = [string]$cv.id
+        $ci.Add_Click({ param($s, $e); Switch-Conversation ([string]$s.Tag) })
+        $chatsItem.Items.Add($ci) | Out-Null
+      }
+    } catch {}
+    $menu.Items.Add($chatsItem) | Out-Null
     $pinLabel = 'Pin above windows'
     if ($win.Topmost) { $pinLabel = 'Unpin' }
     $pin = New-Object System.Windows.Controls.MenuItem
