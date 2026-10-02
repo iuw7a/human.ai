@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { Check, Copy, ThumbsDown, ThumbsUp, Volume2, VolumeX } from "lucide-react";
 import { Markdown } from "../Markdown";
 import { MascotAvatar } from "./MascotAvatar";
+import { BotAvatar } from "../BotAvatar";
 import type { AIStatus } from "./types";
 
 const enter = {
@@ -114,6 +115,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   streaming,
   avatarStatus = "idle",
   avatarSize = 36,
+  avatarPhoto,
   speak,
   onToggleSpeak,
   vote,
@@ -122,10 +124,17 @@ export const AssistantMessage = memo(function AssistantMessage({
   streaming?: boolean;
   avatarStatus?: AIStatus;
   avatarSize?: number;
+  /** Bot photo instead of the mascot (bot contexts show the Bild). */
+  avatarPhoto?: { src: string | null; name: string; accent?: string } | null;
   speak?: SpeakState | null;
   onToggleSpeak?: (text: string) => void;
   vote?: { chatId: string; modelId: string } | null;
 }) {
+  const avatar = avatarPhoto ? (
+    <BotAvatar src={avatarPhoto.src} name={avatarPhoto.name} size={avatarSize} accent={avatarPhoto.accent} />
+  ) : (
+    <MascotAvatar status={streaming ? "generating" : avatarStatus} size={avatarSize} />
+  );
   return (
     <motion.div
       {...enter}
@@ -133,7 +142,7 @@ export const AssistantMessage = memo(function AssistantMessage({
       className="flex gap-3.5 sm:gap-4"
     >
       <div className="shrink-0 pt-1">
-        <MascotAvatar status={streaming ? "generating" : avatarStatus} size={avatarSize} />
+        {avatar}
       </div>
       <div className="min-w-0 flex-1 rounded-[22px] rounded-tl-lg border border-white/[0.06] bg-white/[0.025] px-5 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur-sm">
         <Markdown content={content} />
@@ -159,13 +168,13 @@ export const AssistantMessage = memo(function AssistantMessage({
   );
 });
 
-export function ThinkingRow({ label = "Thinking…" }: { label?: string }) {
+export function ThinkingRow({ label = "Thinking…", avatar }: { label?: string; avatar?: React.ReactNode }) {
   const reduce = useReducedMotion();
   void reduce;
   return (
     <motion.div {...enter} transition={{ duration: 0.25 }} className="flex items-center gap-3.5 sm:gap-4" aria-label={label}>
       <div className="shrink-0">
-        <MascotAvatar status="thinking" size={36} />
+        {avatar ?? <MascotAvatar status="thinking" size={36} />}
       </div>
       <div className="flex items-center gap-2.5 rounded-[22px] rounded-tl-lg border border-white/[0.06] bg-white/[0.025] px-5 py-4">
         <span className="flex items-center gap-1.5" aria-hidden="true">

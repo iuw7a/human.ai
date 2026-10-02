@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Bot } from "@/lib/bots";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { DynamicIsland } from "./ai/DynamicIsland";
-import { MascotAvatar } from "./ai/MascotAvatar";
+import { BotAvatar, type BotAvatarState } from "./BotAvatar";
 import { Composer } from "./ai/Composer";
 import { UserMessage, AssistantMessage, ThinkingRow, type SpeakState } from "./ai/Message";
 import { MessageList } from "./ai/MessageList";
@@ -245,6 +245,18 @@ export function BotChatView({
 
   const empty = messages.length === 0 && !streamed && !sending;
 
+  // Bots show the bot's own photo (Bild), not the mascot.
+  function avaState(s: AIStatus): BotAvatarState {
+    if (s === "listening") return "listening";
+    if (s === "thinking" || s === "searching") return "thinking";
+    if (s === "generating" || s === "speaking") return "responding";
+    if (s === "working") return "working";
+    return "idle";
+  }
+  const photo = (size: number, state: AIStatus) => (
+    <BotAvatar src={bot.avatar_url} name={bot.name} size={size} accent={bot.theme.accent} state={avaState(state)} />
+  );
+
   // Real live activity only — never placeholder text.
   let liveLine: string | undefined;
   if (sending) {
@@ -273,7 +285,7 @@ export function BotChatView({
     <div className="relative flex h-full flex-col bg-black">
       <DynamicIsland
         status={botStatus}
-        avatar={<MascotAvatar status={botStatus} size={22} accent={bot.theme.accent} />}
+        avatar={photo(22, botStatus)}
       />
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         {bgOk && (
@@ -284,7 +296,7 @@ export function BotChatView({
 
       <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/5 px-4 py-2.5 sm:px-6">
         <div className="flex min-w-0 items-center gap-2.5 pl-10 lg:pl-0">
-          <MascotAvatar status={botStatus === "idle" || botStatus === "completed" ? "idle" : botStatus} size={30} accent={bot.theme.accent} />
+          {photo(30, botStatus === "idle" || botStatus === "completed" ? "idle" : botStatus)}
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-white">{bot.name}</p>
             <p className="truncate font-mono text-[11px] text-zinc-500">/bot/{bot.slug}</p>
@@ -304,7 +316,7 @@ export function BotChatView({
         <div className="no-scrollbar relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
           <div className="w-full max-w-2xl">
             <div className="flex flex-col items-center text-center">
-              <MascotAvatar status={botStatus} size={120} accent={bot.theme.accent} />
+              {photo(120, botStatus)}
               <h1 className="mt-6 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
                 How can I help you?
               </h1>
@@ -331,6 +343,8 @@ export function BotChatView({
               <AssistantMessage
                 key={`${conversationId}-${i}`}
                 content={m.content}
+                avatarStatus="idle"
+                avatarPhoto={{ src: bot.avatar_url, name: bot.name, accent: bot.theme.accent }}
                 speak={speakState}
                 onToggleSpeak={toggleSpeak}
               />
@@ -338,9 +352,16 @@ export function BotChatView({
           )}
           {(sending || streamed) &&
             (streamed ? (
-              <AssistantMessage content={streamed} streaming />
+              <AssistantMessage
+                content={streamed}
+                streaming
+                avatarPhoto={{ src: bot.avatar_url, name: bot.name, accent: bot.theme.accent }}
+              />
             ) : (
-              <ThinkingRow label={`${bot.name} is thinking…`} />
+              <ThinkingRow
+                label={`${bot.name} is thinking…`}
+                avatar={photo(36, "thinking")}
+              />
             ))}
           {error && (
             <div className="rounded-[22px] border border-accent/40 bg-accent/10 px-5 py-3.5 text-sm text-red-200">{error}</div>
