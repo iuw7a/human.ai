@@ -145,8 +145,14 @@ export const AssistantMessage = memo(function AssistantMessage({
         {avatar}
       </div>
       <div className="min-w-0 flex-1 rounded-[22px] rounded-tl-lg border border-white/[0.06] bg-white/[0.025] px-5 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur-sm">
-        <Markdown content={content} />
-        {streaming && <span className="ml-1 inline-block h-4 w-[7px] animate-pulse rounded-sm bg-accent align-middle" />}
+        {streaming ? (
+          <p className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-100">
+            {content}
+            <span className="ml-1 inline-block h-4 w-[7px] animate-pulse rounded-sm bg-accent align-middle" />
+          </p>
+        ) : (
+          <Markdown content={content} />
+        )}
         {!streaming && (
           <div className="mt-2.5 flex items-center gap-1">
             <CopyButton text={content} />
