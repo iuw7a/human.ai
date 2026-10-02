@@ -1,5 +1,5 @@
 import { createAdminSupabase, createServerSupabase } from "./supabase/server";
-import { resolveDbModel } from "./admin";
+import { listDbModels, resolveDbModel } from "./admin";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 
@@ -232,6 +232,34 @@ export async function resolveBotModel(modelId: string): Promise<
   if (!m) return { ok: false, error: `Unknown model "${modelId}".` };
   if (!m.enabled) return { ok: false, error: "This model is currently disabled." };
   return { ok: true, provider: m.provider, providerModelId: m.providerModelId, plan: m.plan, vision: m.vision };
+}
+
+/**
+ * NVIDIA-only model resolution for bots. The preferred slug wins when it is
+ * an enabled NVIDIA model; otherwise fall back to the admin default when it
+ * is NVIDIA, else the first enabled NVIDIA model. Never Groq.
+ */
+export async function resolveNvidiaBotModel(preferredSlug: string): Promise<
+  | { ok: true; provider: string; providerModelId: string; plan: "free" | "plus"; vision: boolean; slug: string }
+  | { ok: false; error: string }
+> {
+  const all = await listDbModels();
+  const nv = all.filter((m) => m.provider === "nvidia" && m.enabled);
+  const pick =
+    nv.find((m) => m.id === preferredSlug) ??
+    nv.find((m) => m.is_default) ??
+    nv[0];
+  if (!pick) {
+    return { ok: false, error: "No enabled NVIDIA model. An admin must enable one in /admin → Models." };
+  }
+  return {
+    ok: true,
+    provider: "nvidia",
+    providerModelId: pick.providerModelId,
+    plan: pick.plan,
+    vision: pick.vision,
+    slug: pick.id,
+  };
 }
 
 /** Touch activity timestamp (best effort). */

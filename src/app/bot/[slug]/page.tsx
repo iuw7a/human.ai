@@ -107,8 +107,8 @@ export default async function BotProfilePage({ params }: { params: { slug: strin
         <div className="card mt-4 p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-white">Conversations</h2>
-            <Link href={`/bot/${bot.slug}/chat`} className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-white">
-              <Plus size={13} /> New chat
+            <Link href={`/bot/${bot.slug}/chat/new`} className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-white">
+              <Plus size={13} /> New chat with {bot.name}
             </Link>
           </div>
           {(convs ?? []).length === 0 && (
@@ -118,7 +118,7 @@ export default async function BotProfilePage({ params }: { params: { slug: strin
             {(convs ?? []).map((c) => (
               <Link
                 key={c.id}
-                href={`/bot/${bot.slug}/chat?c=${c.id}`}
+                href={`/bot/${bot.slug}/chat/${c.id}`}
                 className="flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors hover:bg-ink-800"
               >
                 <span className="truncate text-sm text-zinc-200">{c.title || "Conversation"}</span>

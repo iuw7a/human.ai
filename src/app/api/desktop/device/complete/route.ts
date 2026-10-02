@@ -3,7 +3,7 @@ import { createAdminSupabase } from "@/lib/supabase/server";
 import {
   MAX_BOTS_PER_USER,
   normalizeSlug,
-  resolveBotModel,
+  resolveNvidiaBotModel,
   toBot,
   userIsPro,
   validSlug,
@@ -78,9 +78,9 @@ export async function POST(req: NextRequest) {
     await admin.from("profiles").update({ name: userName }).eq("id", ownerId);
   }
 
-  const modelId = await defaultDbModelSlug();
-  const model = await resolveBotModel(modelId);
-  if (!model.ok) return Response.json({ error: "No usable model is configured. Contact support." }, { status: 500 });
+  // Desktop companions always run on NVIDIA.
+  const model = await resolveNvidiaBotModel(await defaultDbModelSlug());
+  if (!model.ok) return Response.json({ error: model.error }, { status: 500 });
 
   const { data: existing } = await admin.from("bots").select("id").eq("owner_id", ownerId);
   if ((existing ?? []).length >= MAX_BOTS_PER_USER) {
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
       description: "My desktop AI companion.",
       personality: `Friendly desktop companion. The user's name is ${userName || "friend"}.`,
       instructions: `The user's name is ${userName || "friend"}. Always reply in ${language} unless the user asks otherwise. Keep answers short and helpful unless asked for detail.`,
-      model_id: modelId,
+      model_id: model.slug,
       memory_enabled: true,
       include_user_memory: false,
       tools: { web_search: true, mcp_server_ids: [] },

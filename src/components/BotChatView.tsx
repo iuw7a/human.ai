@@ -209,9 +209,7 @@ export function BotChatView({
   }
 
   async function newChat() {
-    const res = await fetch(`/api/bots/${bot.slug}/conversations`, { method: "POST" });
-    const j = await res.json().catch(() => null);
-    if (res.ok && j?.id) router.push(`/bot/${bot.slug}/chat?c=${j.id}`);
+    router.push(`/bot/${bot.slug}/chat/new`);
   }
 
   // Stable identities so memoized children skip re-renders while streaming.
@@ -306,7 +304,7 @@ export function BotChatView({
           <Link href={`/bot/${bot.slug}`} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title="Bot profile">
             <ArrowLeft size={16} />
           </Link>
-          <button onClick={newChat} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title="New conversation">
+          <button onClick={newChat} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title={`New chat with ${bot.name}`}>
             <Plus size={16} />
           </button>
         </div>

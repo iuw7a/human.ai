@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
 import { extractBotMemory, runBotTurn, type BotBodyMessage } from "@/lib/bot-chat";
-import { effectiveOwnerId, getOwnedBot, resolveBotModel, touchBot, userIsPro } from "@/lib/bots";
+import { effectiveOwnerId, getOwnedBot, resolveNvidiaBotModel, touchBot, userIsPro } from "@/lib/bots";
 import { defaultDbModelSlug, logAppError, resolveDbModel } from "@/lib/admin";
 
 export const runtime = "nodejs";
@@ -47,7 +47,8 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       .single();
     if (!conv) return Response.json({ error: "Conversation not found." }, { status: 404 });
 
-    const model = await resolveBotModel(bot.model_id);
+    // Bots run on NVIDIA only — never Groq, never a disabled model.
+    const model = await resolveNvidiaBotModel(bot.model_id);
     if (!model.ok) return Response.json({ error: model.error }, { status: 400 });
 
     await touchBot(bot.id);

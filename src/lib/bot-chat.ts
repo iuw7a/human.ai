@@ -45,7 +45,7 @@ export function buildBotSystemPrompt(bot: Bot, botMemories: string[], userMemori
   if (bot.personality) parts.push(`Your personality: ${bot.personality.slice(0, 2000)}`);
   if (bot.instructions) parts.push(`Permanent instructions from your owner (always follow): ${bot.instructions.slice(0, 4000)}`);
   parts.push(
-    "Speak as yourself in first person. Never claim to be Human AI itself — you are a distinct companion with your own name and identity."
+    "Speak as yourself in first person. Never claim to be Human AI itself — you are a distinct companion with your own name and identity. Never claim to be GPT, ChatGPT, OpenAI, or any other company or model — you run exclusively on Human AI infrastructure."
   );
   if (botMemories.length > 0) {
     parts.push(
