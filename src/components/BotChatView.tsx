@@ -138,10 +138,11 @@ export function BotChatView({
       const userMsg: BotStoredMessage = { role: "user", content: text, images: uploaded };
       const history = [...messages, userMsg];
       setMessages(history);
-      await persistUser(
+      // Persist in the background — storage must never delay the AI request.
+      void persistUser(
         text,
         uploaded.map((u) => ({ url: u.storagePath ?? "", storagePath: u.storagePath }))
-      );
+      ).catch(() => {});
       router.refresh();
 
       const apiMessages = history.map((m) => ({

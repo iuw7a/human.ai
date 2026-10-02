@@ -498,11 +498,12 @@ export function ChatView({
     };
     const history = [...messages, userMsg];
     setMessages(history);
-    await persist(
+    // Persist in the background — storage must never delay the AI request.
+    void persist(
       "user",
       text,
       uploaded.map((u) => ({ url: u.storagePath ?? "", storagePath: u.storagePath }))
-    );
+    ).catch(() => {});
     router.refresh();
     return { history, uploaded };
   }

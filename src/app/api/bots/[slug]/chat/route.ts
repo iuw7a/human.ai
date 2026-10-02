@@ -21,10 +21,11 @@ function isDeadModelError(e: unknown): boolean {
 export async function POST(req: NextRequest, { params }: { params: { slug: string } }) {
   const ownerId = await effectiveOwnerId(req);
   if (!ownerId) return Response.json({ error: "Not authenticated." }, { status: 401 });
-  if (!(await userIsPro(ownerId))) {
+  // Pro gate + bot load run together — neither waits for the other.
+  const [isPro, bot] = await Promise.all([userIsPro(ownerId), getOwnedBot(params.slug, ownerId)]);
+  if (!isPro) {
     return Response.json({ error: "Human Bot requires a Pro subscription.", upgrade: true }, { status: 403 });
   }
-  const bot = await getOwnedBot(params.slug, ownerId);
   if (!bot) return Response.json({ error: "Bot not found." }, { status: 404 });
 
   try {
@@ -38,20 +39,20 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     if (messages.length === 0) return Response.json({ error: "No messages provided." }, { status: 400 });
 
     const admin = createAdminSupabase();
-    const { data: conv } = await admin
-      .from("bot_conversations")
-      .select("id")
-      .eq("id", convId)
-      .eq("bot_id", bot.id)
-      .eq("user_id", ownerId)
-      .single();
-    if (!conv) return Response.json({ error: "Conversation not found." }, { status: 404 });
-
-    // Bots run on NVIDIA only — never Groq, never a disabled model.
-    const model = await resolveNvidiaBotModel(bot.model_id);
+    // Conversation check + model resolution run together; activity touch never blocks.
+    const [convRes, model] = await Promise.all([
+      admin
+        .from("bot_conversations")
+        .select("id")
+        .eq("id", convId)
+        .eq("bot_id", bot.id)
+        .eq("user_id", ownerId)
+        .single(),
+      resolveNvidiaBotModel(bot.model_id),
+    ]);
+    if (convRes.error || !convRes.data) return Response.json({ error: "Conversation not found." }, { status: 404 });
     if (!model.ok) return Response.json({ error: model.error }, { status: 400 });
-
-    await touchBot(bot.id);
+    void touchBot(bot.id);
     const lastUserText = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
 
     const encoder = new TextEncoder();

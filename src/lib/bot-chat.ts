@@ -168,35 +168,37 @@ export async function runBotTurn(
 
   const admin = createAdminSupabase();
 
-  // Bot's own memory (+ optionally shared user memory).
-  let botMemories: string[] = [];
-  try {
-    if (bot.memory_enabled) {
-      const { data } = await admin
-        .from("bot_memories")
-        .select("content")
-        .eq("bot_id", bot.id)
-        .order("created_at", { ascending: true })
-        .limit(50);
-      botMemories = (data ?? []).map((m) => String(m.content).slice(0, 1000));
-    }
-  } catch {
-    // memory optional
-  }
-  let userMemories: string[] = [];
-  try {
-    if (bot.include_user_memory) {
-      const { data } = await admin
-        .from("memories")
-        .select("content")
-        .eq("user_id", ownerId)
+  // Bot's own memory (+ optionally shared user memory) — fetched together.
+  const [botMemories, userMemories] = await Promise.all([
+    (async () => {
+      try {
+        if (!bot.memory_enabled) return [] as string[];
+        const { data } = await admin
+          .from("bot_memories")
+          .select("content")
+          .eq("bot_id", bot.id)
+          .order("created_at", { ascending: true })
+          .limit(50);
+        return (data ?? []).map((m) => String(m.content).slice(0, 1000));
+      } catch {
+        return [] as string[];
+      }
+    })(),
+    (async () => {
+      try {
+        if (!bot.include_user_memory) return [] as string[];
+        const { data } = await admin
+          .from("memories")
+          .select("content")
+          .eq("user_id", ownerId)
         .order("created_at", { ascending: true })
         .limit(20);
-      userMemories = (data ?? []).map((m) => String(m.content).slice(0, 1000));
-    }
-  } catch {
-    // optional
-  }
+        return (data ?? []).map((m) => String(m.content).slice(0, 1000));
+      } catch {
+        return [] as string[];
+      }
+    })(),
+  ]);
 
   const systemContent =
     buildBotSystemPrompt(bot, botMemories, userMemories) +
