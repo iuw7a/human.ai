@@ -1,10 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Bot } from "lucide-react";
 
 export type BotAvatarState = "idle" | "listening" | "thinking" | "responding" | "working" | "attention";
 
-/** Bot avatar with subtle state ring. Falls back to a Bot glyph when no image. */
+/** Bot avatar with subtle state ring. Falls back to a Bot glyph when no image (or it fails to load). */
 export function BotAvatar({
   src,
   name,
@@ -18,6 +19,7 @@ export function BotAvatar({
   size?: number;
   accent?: string;
 }) {
+  const [broken, setBroken] = useState(false);
   const ring: Record<BotAvatarState, string> = {
     idle: "ring-ink-700",
     listening: "ring-emerald-500",
@@ -32,9 +34,9 @@ export function BotAvatar({
       style={{ width: size, height: size, ["--tw-ring-color" as string]: state === "idle" ? undefined : accent }}
       title={name}
     >
-      {src ? (
+      {src && !broken ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={name} className="h-full w-full object-cover" />
+        <img src={src} alt={name} className="h-full w-full object-cover" onError={() => setBroken(true)} />
       ) : (
         <Bot size={Math.round(size * 0.45)} className="text-zinc-500" />
       )}
