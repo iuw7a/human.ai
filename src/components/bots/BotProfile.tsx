@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { ArrowUpRight, MessagesSquare, Pencil } from "lucide-react";
 import { BotAvatar } from "../BotAvatar";
 import type { MarketBot } from "@/lib/bots-marketplace";
@@ -48,7 +48,7 @@ export function BotProfile({
         </div>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
           <Link
-            href={`/bots/${bot.slug}/chat/new`}
+            href={`/bot/${bot.slug}/chat/new`}
             className="inline-flex items-center gap-1.5 rounded-2xl bg-white px-6 py-3 text-[15px] font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
           >
             Start Chat <ArrowUpRight size={17} />
@@ -86,3 +86,4 @@ export function BotProfile({
     </div>
   );
 }
+

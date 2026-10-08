@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { ArrowUpRight, MessagesSquare } from "lucide-react";
 import { BotAvatar } from "../BotAvatar";
 import type { MarketBot } from "@/lib/bots-marketplace";
@@ -39,7 +39,7 @@ export function BotCard({ bot, showFavorite = true }: { bot: MarketBot; showFavo
         </span>
       </div>
       <Link
-        href={`/bots/${bot.slug}/chat/new`}
+        href={`/bot/${bot.slug}/chat/new`}
         className="mt-4 inline-flex items-center justify-center gap-1.5 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
       >
         Start Chat <ArrowUpRight size={15} />
@@ -47,3 +47,4 @@ export function BotCard({ bot, showFavorite = true }: { bot: MarketBot; showFavo
     </article>
   );
 }
+

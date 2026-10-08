@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -60,7 +60,7 @@ export function MineBotRow({
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-1.5">
         <button
-          onClick={() => router.push(`/bots/${bot.slug}/chat/new`)}
+          onClick={() => router.push(`/bot/${bot.slug}/chat/new`)}
           className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-[13px] font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
         >
           <Play size={13} /> Preview
@@ -89,3 +89,4 @@ export function MineBotRow({
     </article>
   );
 }
+
