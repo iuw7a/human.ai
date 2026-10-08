@@ -1,13 +1,14 @@
 import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
-import { effectiveOwnerId, getOwnedBot, userIsPro } from "@/lib/bots";
+import { effectiveOwnerId, getAccessibleBot, userIsPro } from "@/lib/bots";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function ownConversation(slug: string, convId: string, userId: string) {
-  const bot = await getOwnedBot(slug, userId);
-  if (!bot) return null;
+  const found = await getAccessibleBot(slug, userId);
+  if (!found) return null;
+  const bot = found.bot;
   const admin = createAdminSupabase();
   const { data } = await admin
     .from("bot_conversations")

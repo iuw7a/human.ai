@@ -12,6 +12,7 @@ import {
   Crown,
   Bot,
   Sparkles,
+  Store,
   User,
   Settings,
   Brain,
@@ -41,7 +42,8 @@ interface ChatItem {
 /** Workspace-only navigation. Account-level pages live in the user menu. */
 const NAV = [
   { href: "/agent", label: "Agent", icon: Bot },
-  { href: "/bots", label: "My Bots", icon: Sparkles },
+  { href: "/bots", label: "Bots", icon: Store },
+  { href: "/bots/mine", label: "My Bots", icon: Sparkles },
   { href: "/plugins", label: "Plugins", icon: Puzzle },
   { href: "/library", label: "Library", icon: LibraryBig },
   { href: "/mcp", label: "MCP Servers", icon: Plug },
@@ -193,8 +195,14 @@ export function Sidebar({
     router.refresh();
   }
 
-  const isActive = (href: string) =>
-    pathname === href || pathname?.startsWith(href + "/");
+  const isActive = (href: string) => {
+    if (!pathname) return false;
+    if (pathname === href) return true;
+    // "/bots" stays highlighted across marketplace + profiles (but not My Bots / new).
+    if (href === "/bots") return pathname.startsWith("/bots/") && !pathname.startsWith("/bots/mine") && pathname !== "/bots/new";
+    if (href === "/bots/mine" || href === "/bots/new") return false;
+    return pathname.startsWith(href + "/");
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
 import { extractBotMemory, runBotTurn, type BotBodyMessage } from "@/lib/bot-chat";
-import { effectiveOwnerId, getOwnedBot, resolveNvidiaBotModel, touchBot, userIsPro } from "@/lib/bots";
+import { effectiveOwnerId, getAccessibleBot, resolveNvidiaBotModel, touchBot, userIsPro } from "@/lib/bots";
 import { defaultDbModelSlug, logAppError, resolveDbModel } from "@/lib/admin";
 
 export const runtime = "nodejs";
@@ -22,11 +22,13 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
   const ownerId = await effectiveOwnerId(req);
   if (!ownerId) return Response.json({ error: "Not authenticated." }, { status: 401 });
   // Pro gate + bot load run together — neither waits for the other.
-  const [isPro, bot] = await Promise.all([userIsPro(ownerId), getOwnedBot(params.slug, ownerId)]);
+  // Any Pro user may chat with owned bots and public marketplace bots.
+  const [isPro, found] = await Promise.all([userIsPro(ownerId), getAccessibleBot(params.slug, ownerId)]);
   if (!isPro) {
     return Response.json({ error: "Human Bot requires a Pro subscription.", upgrade: true }, { status: 403 });
   }
-  if (!bot) return Response.json({ error: "Bot not found." }, { status: 404 });
+  if (!found) return Response.json({ error: "Bot not found." }, { status: 404 });
+  const bot = found.bot;
 
   try {
     const body = (await req.json()) as {

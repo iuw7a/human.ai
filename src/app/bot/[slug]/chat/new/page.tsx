@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
-import { toBot } from "@/lib/bots";
+import { getAccessibleBot } from "@/lib/bots";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +22,9 @@ export default async function BotChatNewPage({ params }: { params: { slug: strin
   }
   if (!isPro) redirect("/bots");
 
-  const { data: row } = await admin.from("bots").select("*").eq("slug", params.slug).single();
-  if (!row || row.owner_id !== user.id) redirect("/bots");
-  const bot = toBot(row);
+  const probe = await getAccessibleBot(params.slug, user.id);
+  if (!probe) redirect("/bots");
+  const bot = probe.bot;
 
   const convId =
     typeof crypto !== "undefined" && "randomUUID" in crypto

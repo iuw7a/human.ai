@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
-import { effectiveOwnerId, getOwnedBot, userIsPro } from "@/lib/bots";
+import { effectiveOwnerId, getAccessibleBot, userIsPro } from "@/lib/bots";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,13 +12,15 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
   if (!(await userIsPro(ownerId))) {
     return Response.json({ error: "Human Bot requires a Pro subscription.", upgrade: true }, { status: 403 });
   }
-  const bot = await getOwnedBot(params.slug, ownerId);
-  if (!bot) return Response.json({ error: "Bot not found." }, { status: 404 });
+  const found = await getAccessibleBot(params.slug, ownerId);
+  if (!found) return Response.json({ error: "Bot not found." }, { status: 404 });
+  const bot = found.bot;
   const admin = createAdminSupabase();
   const { data } = await admin
     .from("bot_conversations")
     .select("id,title,created_at,updated_at")
     .eq("bot_id", bot.id)
+    .eq("user_id", ownerId)
     .order("updated_at", { ascending: false })
     .limit(50);
   return Response.json({ conversations: data ?? [] });
@@ -31,8 +33,9 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
   if (!(await userIsPro(ownerId))) {
     return Response.json({ error: "Human Bot requires a Pro subscription.", upgrade: true }, { status: 403 });
   }
-  const bot = await getOwnedBot(params.slug, ownerId);
-  if (!bot) return Response.json({ error: "Bot not found." }, { status: 404 });
+  const foundPost = await getAccessibleBot(params.slug, ownerId);
+  if (!foundPost) return Response.json({ error: "Bot not found." }, { status: 404 });
+  const botPost = foundPost.bot;
   const id =
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID().replace(/-/g, "").slice(0, 12)
@@ -40,7 +43,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
   const admin = createAdminSupabase();
   const { error } = await admin.from("bot_conversations").insert({
     id,
-    bot_id: bot.id,
+    bot_id: botPost.id,
     user_id: ownerId,
     title: "New conversation",
   });

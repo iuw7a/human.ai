@@ -34,11 +34,13 @@ export function BotChatView({
   user,
   conversationId,
   initialMessages,
+  isOwner = true,
 }: {
   bot: Bot;
   user: SupabaseUser | null;
   conversationId: string;
   initialMessages: BotStoredMessage[];
+  isOwner?: boolean;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<BotStoredMessage[]>(initialMessages);
@@ -298,11 +300,16 @@ export function BotChatView({
           {photo(30, botStatus === "idle" || botStatus === "completed" ? "idle" : botStatus)}
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-white">{bot.name}</p>
-            <p className="truncate font-mono text-[11px] text-zinc-500">/bot/{bot.slug}</p>
+            <p className="flex items-center gap-1.5 truncate font-mono text-[11px] text-zinc-500">
+              @{bot.slug}
+              <span className="inline-flex items-center gap-1 font-sans text-[10px] text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Online
+              </span>
+            </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Link href={`/bot/${bot.slug}`} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title="Bot profile">
+          <Link href={`/bots/${bot.slug}`} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title="Bot profile">
             <ArrowLeft size={16} />
           </Link>
           <button onClick={newChat} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title={`New chat with ${bot.name}`}>
@@ -324,7 +331,7 @@ export function BotChatView({
               </p>
             </div>
             <div className="mt-7 space-y-2">
-              <TaskPanel botSlug={bot.slug} accent={bot.theme.accent} />
+              {isOwner && <TaskPanel botSlug={bot.slug} accent={bot.theme.accent} />}
               {composer}
             </div>
           </div>
@@ -380,10 +387,10 @@ export function BotChatView({
       {!empty && (
         <div className="relative z-10">
           <div className="mx-auto w-full max-w-3xl space-y-2 px-4 pb-5 pt-2 sm:px-6">
-            <TaskPanel botSlug={bot.slug} accent={bot.theme.accent} />
+            {isOwner && <TaskPanel botSlug={bot.slug} accent={bot.theme.accent} />}
             <div className="flex items-center justify-center">
               <a href="/bots" className="inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-900 px-2.5 py-1 text-[11px] text-zinc-400 transition-colors hover:text-white">
-                <Plug size={11} /> My Bots
+                <Plug size={11} /> Bots
               </a>
             </div>
             {composer}

@@ -47,12 +47,20 @@ export interface Bot {
   companion: BotCompanion;
   avatar_path: string | null;
   avatar_url: string | null;
+  visibility: BotVisibility;
+  category: string;
   last_active_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export type BotStatus = "online" | "idle" | "working";
+
+export type BotVisibility = "private" | "unlisted" | "public";
+
+export function normalizeVisibility(v: unknown): BotVisibility {
+  return v === "public" || v === "unlisted" || v === "private" ? v : "private";
+}
 
 export function botStatus(bot: Pick<Bot, "last_active_at">): Exclude<BotStatus, "working"> {
   if (!bot.last_active_at) return "idle";
@@ -61,6 +69,8 @@ export function botStatus(bot: Pick<Bot, "last_active_at">): Exclude<BotStatus, 
 
 export function avatarUrl(path: string | null): string | null {
   if (!path) return null;
+  // Local public asset (e.g. the official Humi mascot at /humi.png).
+  if (path.startsWith("/")) return path;
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!base) return null;
   return `${base}/storage/v1/object/public/bot-avatars/${path}`;
@@ -139,6 +149,8 @@ export function toBot(row: any): Bot {
     companion: normalizeCompanion(row.companion),
     avatar_path: row.avatar_path ?? null,
     avatar_url: avatarUrl(row.avatar_path ?? null),
+    visibility: normalizeVisibility((row as Record<string, unknown>)?.visibility),
+    category: String((row as Record<string, unknown>)?.category ?? "General").slice(0, 40) || "General",
     last_active_at: row.last_active_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -222,6 +234,28 @@ export async function getOwnedBot(slug: string, userId: string): Promise<Bot | n
   if (!data || data.owner_id !== userId) return null;
   return toBot(data);
 }
+
+/**
+ * Load a bot the user may chat with: owned bots always, plus public bots.
+ * Tolerant of databases without the visibility column (owner-only fallback).
+ * SERVER ONLY.
+ */
+export async function getAccessibleBot(slug: string, userId: string): Promise<{ bot: Bot; owner: boolean } | null> {
+  const admin = createAdminSupabase();
+  const { data, error } = await admin.from("bots").select("*").eq("slug", slug).single();
+  if (error || !data) return null;
+  const bot = toBot(data);
+  if (data.owner_id === userId) return { bot, owner: true };
+  // Public bots are chattable by anyone. If the visibility column does not
+  // exist yet, only the well-known official slugs are treated as public.
+  const vis = (data as Record<string, unknown>)?.visibility;
+  if (vis === "public") return { bot, owner: false };
+  if (vis === undefined && OFFICIAL_BOT_SLUGS.has(slug)) return { bot, owner: false };
+  return null;
+}
+
+/** Slugs of the official Human AI bots (seeded, always listed as official). */
+export const OFFICIAL_BOT_SLUGS = new Set(["humi", "codey", "study", "research", "creator", "analyst"]);
 
 /** Validate a model slug for bot use (exists + enabled). Returns provider model info. */
 export async function resolveBotModel(modelId: string): Promise<

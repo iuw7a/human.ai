@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
-import { effectiveOwnerId, getOwnedBot, userIsPro } from "@/lib/bots";
+import { effectiveOwnerId, getAccessibleBot, userIsPro } from "@/lib/bots";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,8 +12,9 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
   if (!(await userIsPro(ownerId))) {
     return Response.json({ error: "Human Bot requires a Pro subscription.", upgrade: true }, { status: 403 });
   }
-  const bot = await getOwnedBot(params.slug, ownerId);
-  if (!bot) return Response.json({ error: "Bot not found." }, { status: 404 });
+  const found = await getAccessibleBot(params.slug, ownerId);
+  if (!found) return Response.json({ error: "Bot not found." }, { status: 404 });
+  const bot = found.bot;
   const b = (await req.json().catch(() => null)) as { conversation_id?: string; content?: string } | null;
   const convId = (b?.conversation_id ?? "").trim();
   const content = (b?.content ?? "").trim().slice(0, 20000);

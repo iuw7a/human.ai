@@ -48,6 +48,8 @@ export async function POST(req: NextRequest) {
       tools?: { web_search?: boolean; mcp_server_ids?: string[] };
       theme?: { accent?: string };
       voice?: { tts_enabled?: boolean; stt_enabled?: boolean };
+      visibility?: string;
+      category?: string;
     };
     const name = (b.name ?? "").trim().slice(0, 60);
     if (!name) return Response.json({ error: "A Bot name is required." }, { status: 400 });
@@ -79,29 +81,45 @@ export async function POST(req: NextRequest) {
         : { web_search: true, mcp_server_ids: [] };
     const accent =
       typeof b.theme?.accent === "string" && /^#[0-9a-fA-F]{6}$/.test(b.theme.accent) ? b.theme.accent : "#e5484d";
+    const visibility = b.visibility === "public" || b.visibility === "unlisted" ? b.visibility : "private";
+    const category = (b.category ?? "").trim().slice(0, 40) || "General";
 
-    const { data, error } = await admin
-      .from("bots")
-      .insert({
-        owner_id: user.id,
-        slug,
-        name,
-        description: (b.description ?? "").slice(0, 500),
-        personality: (b.personality ?? "").slice(0, 2000),
-        instructions: (b.instructions ?? "").slice(0, 4000),
-        model_id: modelId,
-        memory_enabled: b.memory_enabled !== false,
-        include_user_memory: !!b.include_user_memory,
-        tools,
-        theme: { accent },
-        voice: {
-          tts_enabled: !!b.voice?.tts_enabled,
-          stt_enabled: !!b.voice?.stt_enabled,
-        },
-      })
-      .select("*")
-      .single();
-    if (error) throw error;
+    const insertRow: Record<string, unknown> = {
+      owner_id: user.id,
+      slug,
+      name,
+      description: (b.description ?? "").slice(0, 500),
+      personality: (b.personality ?? "").slice(0, 2000),
+      instructions: (b.instructions ?? "").slice(0, 4000),
+      model_id: modelId,
+      memory_enabled: b.memory_enabled !== false,
+      include_user_memory: !!b.include_user_memory,
+      tools,
+      theme: { accent },
+      visibility,
+      category,
+      voice: {
+        tts_enabled: !!b.voice?.tts_enabled,
+        stt_enabled: !!b.voice?.stt_enabled,
+      },
+    };
+    let data: Record<string, unknown> | null = null;
+    {
+      const res = await admin.from("bots").insert(insertRow).select("*").single();
+      if (!res.error) {
+        data = res.data;
+      } else if (/visibility|category|column/i.test(res.error.message ?? "")) {
+        // Pre-migration database: retry without the new columns.
+        delete insertRow.visibility;
+        delete insertRow.category;
+        const retry = await admin.from("bots").insert(insertRow).select("*").single();
+        if (retry.error) throw retry.error;
+        data = retry.data;
+      } else {
+        throw res.error;
+      }
+    }
+    if (!data) throw new Error("Could not create Bot.");
     return Response.json({ bot: toBot(data) });
   } catch (e) {
     void logAppError("api/bots POST", e instanceof Error ? e.message : "Failed.");

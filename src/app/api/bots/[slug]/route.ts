@@ -38,6 +38,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
       tools?: { web_search?: boolean; mcp_server_ids?: unknown };
       theme?: { accent?: unknown };
       voice?: { tts_enabled?: unknown; stt_enabled?: unknown };
+      visibility?: unknown;
+      category?: unknown;
       companion?: { x?: unknown; y?: unknown; size?: unknown; always_on_top?: unknown; hidden?: unknown };
     };
     const patch: Record<string, unknown> = {};
@@ -70,14 +72,39 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
       const v = b.voice as { tts_enabled?: unknown; stt_enabled?: unknown };
       patch.voice = { tts_enabled: !!v.tts_enabled, stt_enabled: !!v.stt_enabled };
     }
+    if (b.visibility !== undefined) {
+      patch.visibility =
+        b.visibility === "public" || b.visibility === "unlisted" || b.visibility === "private"
+          ? b.visibility
+          : "private";
+    }
+    if (b.category !== undefined) {
+      patch.category = String(b.category).trim().slice(0, 40) || "General";
+    }
     if (b.companion !== undefined && typeof b.companion === "object" && b.companion !== null) {
       patch.companion = mergeCompanionPatch(b.companion, bot.companion);
     }
     if (Object.keys(patch).length === 0) return Response.json({ bot });
     patch.updated_at = new Date().toISOString();
     const admin = createAdminSupabase();
-    const { data, error } = await admin.from("bots").update(patch).eq("id", bot.id).select("*").single();
-    if (error) throw error;
+    let data: Record<string, unknown> | null = null;
+    {
+      const res = await admin.from("bots").update(patch).eq("id", bot.id).select("*").single();
+      if (!res.error) {
+        data = res.data;
+      } else if (/visibility|category|column/i.test(res.error.message ?? "")) {
+        // Pre-migration database: retry without the new columns.
+        delete patch.visibility;
+        delete patch.category;
+        if (Object.keys(patch).length <= 1) return Response.json({ bot });
+        const retry = await admin.from("bots").update(patch).eq("id", bot.id).select("*").single();
+        if (retry.error) throw retry.error;
+        data = retry.data;
+      } else {
+        throw res.error;
+      }
+    }
+    if (!data) throw new Error("Could not update Bot.");
     return Response.json({ bot: toBot(data) });
   } catch (e) {
     void logAppError("api/bots PATCH", e instanceof Error ? e.message : "Failed.");

@@ -3,7 +3,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProUpgrade } from "@/components/ProUpgrade";
 import { BotChatView, type BotStoredMessage } from "@/components/BotChatView";
 import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
-import { toBot } from "@/lib/bots";
+import { getAccessibleBot } from "@/lib/bots";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +34,10 @@ export default async function BotChatThreadPage({
     );
   }
 
-  const { data: row } = await admin.from("bots").select("*").eq("slug", params.slug).single();
-  if (!row || row.owner_id !== user.id) redirect("/bots");
-  const bot = toBot(row);
+  const probe = await getAccessibleBot(params.slug, user.id);
+  if (!probe) redirect("/bots");
+  const bot = probe.bot;
+  const isOwner = probe.owner;
 
   // The id must be this bot's conversation — otherwise start fresh.
   const { data: own } = await admin
@@ -79,7 +80,7 @@ export default async function BotChatThreadPage({
 
   return (
     <AppShell>
-      <BotChatView key={`${bot.slug}-${convId}`} bot={bot} user={user} conversationId={convId} initialMessages={initialMessages} />
+      <BotChatView key={`${bot.slug}-${convId}`} bot={bot} user={user} conversationId={convId} initialMessages={initialMessages} isOwner={isOwner} />
     </AppShell>
   );
 }
