@@ -139,6 +139,12 @@ export function ApiKeysClient() {
 
       <div className="rounded-[22px] border border-white/[0.07] bg-white/[0.02] p-5">
         <h2 className="text-sm font-semibold text-white">Use it</h2>
+        <p className="mt-1 text-xs text-zinc-500">
+          Full reference with streaming examples:{" "}
+          <a href="/platform/api/docs" className="text-white underline underline-offset-4 hover:no-underline">
+            API Documentation
+          </a>
+        </p>
         <pre className="mt-3 overflow-x-auto rounded-2xl bg-black/60 p-4 font-mono text-xs leading-5 text-zinc-300">{`curl https://usehuman.de/api/chat \\
   -H "x-api-key: YOUR_KEY" \\
   -H "Content-Type: application/json" \\
