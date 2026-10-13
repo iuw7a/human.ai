@@ -27,6 +27,8 @@ import {
   X,
   LogOut,
   Home,
+  Image as ImageIcon,
+  Clapperboard,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -59,6 +61,13 @@ const SECTIONS: { title: string; items: { href: string; label: string; icon: Rea
       { href: "/admin/notifications", label: "Notifications", icon: Inbox },
       { href: "/admin/emails", label: "Emails", icon: Mail },
       { href: "/admin/pages", label: "Pages", icon: FileText },
+    ],
+  },
+  {
+    title: "Tools",
+    items: [
+      { href: "/admin/tools/images", label: "Images", icon: ImageIcon },
+      { href: "/admin/tools/video", label: "Video", icon: Clapperboard },
     ],
   },
   {
