@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Settings, Square, Plus, Pencil, Trash2 } from "lucide-react";
+import { Phone, Settings, Square, Plus, Pencil, Trash2 } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { Composer } from "@/components/ai/Composer";
@@ -10,6 +10,8 @@ import { MessageList } from "@/components/ai/MessageList";
 import { UserMessage, AssistantMessage, ThinkingRow, type SpeakState } from "@/components/ai/Message";
 import type { PendingImage } from "@/components/ChatInput";
 import { useHumiMic } from "./useHumiMic";
+import { CallInterface } from "./CallInterface";
+import type { CallExchange } from "./useVoiceCall";
 import {
   playHumiTts,
   stopHumiAudio,
@@ -68,6 +70,13 @@ export function HumiChatView({
   const [voiceText, setVoiceText] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [callOpen, setCallOpen] = useState(false);
+  const [callMicOk] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      (("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window)) &&
+      !!navigator.mediaDevices?.getUserMedia
+  );
 
   const sendingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -321,6 +330,28 @@ export function HumiChatView({
     setError(null);
   }
 
+  function openCall() {
+    if (sendingRef.current) return;
+    stopAll();
+    mic.stop();
+    setError(null);
+    setCallOpen(true);
+  }
+
+  const handleCallExchange = useCallback(
+    (ex: CallExchange) => {
+      // Adopt the call's conversation so text + voice share one history.
+      setChatId(ex.chatId);
+      chatIdRef.current = ex.chatId;
+      setMessages((prev) => [...prev, { role: "user", content: ex.userText }, { role: "assistant", content: ex.assistantText }]);
+      void persist("user", ex.userText, [], ex.chatId).catch(() => {});
+      void persist("assistant", ex.assistantText, [], ex.chatId).catch(() => {});
+      void refreshChats();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   async function renameChat(id: string) {
     const title = editTitle.trim().slice(0, 80);
     setEditingId(null);
@@ -421,6 +452,15 @@ export function HumiChatView({
             </p>
           </div>
           <Link href="/urhumi" className="rounded-lg px-2 py-1 text-xs text-zinc-400 hover:text-white">All Humis</Link>
+          <button
+            onClick={openCall}
+            disabled={!callMicOk}
+            aria-label="Start voice call"
+            title={callMicOk ? `Call ${assistant.name}` : "Voice calls need Chrome or Edge with a microphone"}
+            className="flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+          >
+            <Phone size={14} /> Call
+          </button>
           <Link href={`/urhumi/${assistant.id}/edit`} aria-label="Humi settings" title="Humi settings" className="rounded-lg p-2 text-zinc-400 hover:bg-white/[0.07] hover:text-white">
             <Settings size={17} />
           </Link>
@@ -501,6 +541,22 @@ export function HumiChatView({
           </>
         )}
       </div>
+      {callOpen && (
+        <CallInterface
+          assistant={{
+            id: assistant.id,
+            name: assistant.name,
+            model_id: assistant.model_id,
+            personality: assistant.personality,
+            custom_instructions: assistant.custom_instructions,
+            language: assistant.language,
+          }}
+          avatarSrc={avatarSrc}
+          initialHistory={messages.slice(-30).map((m) => ({ role: m.role, content: m.content }))}
+          onExchange={handleCallExchange}
+          onClose={() => setCallOpen(false)}
+        />
+      )}
     </div>
   );
 }
