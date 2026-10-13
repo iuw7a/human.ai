@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { KeyRound } from "lucide-react";
 import type { PendingImage } from "@/components/ChatInput";
 import { Composer } from "@/components/ai/Composer";
 import { EmptyState } from "@/components/ai/EmptyState";
@@ -148,11 +149,17 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
           </div>
         </div>
       </div>
-      <footer className="relative z-10 flex items-center justify-center gap-4 px-4 py-4 text-xs text-zinc-500">
-        <span>Human AI</span>
-        <a href="/platform/about" className="hover:text-zinc-300">About</a>
-        <a href="/terms" className="hover:text-zinc-300">Terms</a>
-        <a href="/platform" className="hover:text-zinc-300">Platform</a>
+      <footer className="relative z-10 flex flex-wrap items-center justify-center gap-2 px-4 py-4 text-xs text-zinc-500">
+        <span className="px-2">Human AI</span>
+        <a href="/platform/about" className="px-2 hover:text-zinc-300">About</a>
+        <a href="/terms" className="px-2 hover:text-zinc-300">Terms</a>
+        <a href="/platform" className="px-2 hover:text-zinc-300">Platform</a>
+        <a
+          href="/platform/api"
+          className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.04] px-3.5 py-1.5 font-medium text-zinc-200 transition-colors hover:border-accent/60 hover:text-white"
+        >
+          <KeyRound size={12} /> API Keys
+        </a>
       </footer>
     </div>
   );
