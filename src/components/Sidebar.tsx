@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   MessageSquarePlus,
   MessagesSquare,
-  Heart,
   User,
   Settings,
   Brain,
@@ -35,13 +34,12 @@ interface ChatItem {
 }
 
 /** Core navigation lives here; tools and explorables moved to /platform. */
-const NAV = [{ href: "/humi", label: "Humi", icon: Heart }];
+const NAV = [{ href: "/platform", label: "Platform", icon: LayoutGrid }];
 
 const USER_MENU = [
   { href: "/account", label: "Account", icon: Settings },
   { href: "/profile", label: "Profile", icon: User },
   { href: "/memory", label: "Memory", icon: Brain },
-  { href: "/platform", label: "Platform", icon: LayoutGrid },
 ];
 
 function groupLabel(dateStr: string): string {

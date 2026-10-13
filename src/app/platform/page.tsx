@@ -1,6 +1,6 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { MessageSquarePlus, Image, History, Brain, ShieldCheck, Zap, Bot, Crown, Plug, LibraryBig, Puzzle, Heart, Sparkles } from "lucide-react";
-import { AppShell } from "@/components/AppShell";
+import { PlatformShell } from "@/components/platform/PlatformShell";
 import { listModels } from "@/lib/models";
 
 const FEATURES = [
@@ -43,8 +43,8 @@ export default function PlatformPage() {
       all.findIndex((x) => x.providerModelId === m.providerModelId) === i
   );
   return (
-    <AppShell>
-      <div className="mx-auto w-full max-w-3xl px-4 py-10 pl-14 lg:pl-4">
+    <PlatformShell>
+      <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
         <p className="text-xs font-medium uppercase tracking-widest text-accent">
           Platform
         </p>
@@ -111,6 +111,6 @@ export default function PlatformPage() {
           </Link>
         </div>
       </div>
-    </AppShell>
+    </PlatformShell>
   );
 }

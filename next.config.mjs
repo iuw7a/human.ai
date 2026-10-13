@@ -4,6 +4,8 @@ const nextConfig = {
     serverActions: { bodySizeLimit: "10mb" },
     // Playwright must stay external (native bindings, lazy deps).
     serverComponentsExternalPackages: ["playwright", "playwright-core"],
+    // Tree-shake icon imports — lucide-react is the largest client dep.
+    optimizePackageImports: ["lucide-react"],
   },
   async redirects() {
     return [

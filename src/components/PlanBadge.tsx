@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getSubscription } from "@/lib/subscriptionClient";
 
 /** Current plan badge for account areas and next to the user name. Server-verified. */
 export function PlanBadge({ compact = false }: { compact?: boolean }) {
@@ -8,8 +9,7 @@ export function PlanBadge({ compact = false }: { compact?: boolean }) {
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/me/subscription")
-      .then((r) => (r.ok ? r.json() : null))
+    getSubscription()
       .then((j) => {
         if (j) {
           setPlan(j.plan ?? "free");

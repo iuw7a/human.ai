@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Zap, ChevronDown, Check, Lock } from "lucide-react";
+import { getModels, getSubscription } from "@/lib/subscriptionClient";
 
 interface ApiModel {
   id: string;
@@ -38,12 +39,10 @@ export function PowerSelector({
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch("/api/models")
-      .then((r) => r.json())
-      .then((j) => setModels(j.models ?? []))
+    getModels()
+      .then((models) => setModels(models))
       .catch(() => {});
-    fetch("/api/me/subscription")
-      .then((r) => (r.ok ? r.json() : null))
+    getSubscription()
       .then((j) => {
         if (j?.plan) setPlan(j.plan);
       })

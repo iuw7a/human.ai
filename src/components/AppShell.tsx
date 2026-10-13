@@ -13,16 +13,16 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   let dbError = false;
   let plan: "all" | "free" | "plus" = "all";
   if (user) {
-    try {
-      const { data, error } = await supabase
+    // Chats + profile in parallel — never sequential DB waterfalls per navigation.
+    const [chatsRes, profileRes] = await Promise.all([
+      supabase
         .from("chats")
         .select("id,title,model_id,updated_at,humi_assistant_id")
         .order("updated_at", { ascending: false })
-        .limit(30);
-      if (error) throw error;
-      // Bot threads live on /bot/[slug]/chat — keep the main sidebar to regular chats.
-      chats = ((data ?? []) as typeof chats).filter((c) => !c.humi_assistant_id);
-    } catch {
+        .limit(30),
+      supabase.from("profiles").select("plan").eq("id", user.id).single(),
+    ]);
+    if (chatsRes.error) {
       // Pre-migration database (no humi_assistant_id yet): previous behavior.
       const { data, error } = await supabase
         .from("chats")
@@ -31,13 +31,11 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         .limit(30);
       chats = data ?? [];
       dbError = !!error;
+    } else {
+      // Bot threads live on /bot/[slug]/chat — keep the main sidebar to regular chats.
+      chats = (((chatsRes.data ?? []) as typeof chats).filter((c) => !c.humi_assistant_id));
     }
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("plan")
-      .eq("id", user.id)
-      .single();
-    plan = profile?.plan === "plus" ? "plus" : "free";
+    plan = profileRes.data?.plan === "plus" ? "plus" : "free";
   }
 
   const [banners, modals, notices] = await Promise.all([

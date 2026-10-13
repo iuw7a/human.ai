@@ -1,12 +1,12 @@
-import { AppShell } from "@/components/AppShell";
+﻿import { PlatformShell } from "@/components/platform/PlatformShell";
 import { Markdown } from "@/components/Markdown";
 import { getPublishedPage } from "@/lib/pages";
 
 export default async function AboutPage() {
   const custom = await getPublishedPage("about");
   return (
-    <AppShell>
-      <div className="mx-auto w-full max-w-2xl px-4 py-10 pl-14 lg:pl-4">
+    <PlatformShell>
+      <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6">
         <p className="text-xs font-medium uppercase tracking-widest text-accent">
           About
         </p>
@@ -48,6 +48,6 @@ export default async function AboutPage() {
         </div>
         )}
       </div>
-    </AppShell>
+    </PlatformShell>
   );
 }

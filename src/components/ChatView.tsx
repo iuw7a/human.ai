@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Globe, Home, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
+import { Check, Globe, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
 import type { PendingImage } from "./ChatInput";
 import { createClient } from "@/lib/supabase/client";
 import { getModel } from "@/lib/models";
@@ -32,16 +32,6 @@ export interface StoredMessage {
 function CompanionSwitcher() {
   return (
     <div className="mb-2 flex items-center justify-end gap-2">
-      <a
-        href="/"
-        title="Home"
-        className="group flex items-center gap-2 rounded-full border border-white/[0.09] bg-white/[0.03] py-1 pl-1 pr-3 transition-colors hover:border-white/20 hover:bg-white/[0.06]"
-      >
-        <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-ink-800">
-          <Home size={14} className="text-zinc-300" />
-        </span>
-        <span className="text-xs font-medium text-zinc-300 group-hover:text-white">Home</span>
-      </a>
       <a
         href="/humi"
         title="Chat with Humi"

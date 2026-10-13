@@ -1,5 +1,5 @@
 ﻿import Link from "next/link";
-import { AppShell } from "@/components/AppShell";
+import { PlatformShell } from "@/components/platform/PlatformShell";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +23,7 @@ function Code({ children, label }: { children: string; label: string }) {
 /** /platform/api/docs — public API reference for the Human AI API. */
 export default async function ApiDocsPage() {
   return (
-    <AppShell>
+    <PlatformShell>
       <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
         <p className="text-xs font-medium uppercase tracking-widest text-accent">Developers</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">API Documentation</h1>
@@ -146,6 +146,6 @@ print(full)`}</Code>
           </Link>
         </div>
       </div>
-    </AppShell>
+    </PlatformShell>
   );
 }
