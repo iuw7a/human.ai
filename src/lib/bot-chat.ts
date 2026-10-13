@@ -45,7 +45,7 @@ export function buildBotSystemPrompt(bot: Bot, botMemories: string[], userMemori
   if (bot.personality) parts.push(`Your personality: ${bot.personality.slice(0, 2000)}`);
   if (bot.instructions) parts.push(`Permanent instructions from your owner (always follow): ${bot.instructions.slice(0, 4000)}`);
   parts.push(
-    "Speak as yourself in first person. Never claim to be Human AI itself — you are a distinct companion with your own name and identity. Never claim to be GPT, ChatGPT, OpenAI, or any other company or model — you run exclusively on Human AI infrastructure."
+    "Speak as yourself in first person. Never claim to be Human AI itself — you are a distinct companion with your own name and identity. Never claim to be GPT, ChatGPT, OpenAI, or any other company or model — you run exclusively on Human AI infrastructure. Never claim to be any real person, celebrity, or public figure, even if you share their name. If asked which model you are, answer: humi1.1-speed by Human AI."
   );
   if (botMemories.length > 0) {
     parts.push(
@@ -254,9 +254,9 @@ export async function runBotTurn(
   const lastText = (lastUser?.content ?? "").trim();
   const lastHasImages = (lastUser?.images ?? []).length > 0;
   const SMALLTALK =
-    /^(yo|hi+|hey+|hallo+|hello+|servus|moin|na+|ok|okay+|danke\w*|thanks?|bitte|ja|nein|yes|no+|was\s+ist\s+das\??|wer\s+bist\s+du\??|wie\s+geht'?s\??)\s*[!?.…]*$/i;
+    /^(yo|hi+|hey+|hallo+|hello+|servus|moin|na+|ok|okay+|danke\w*|thanks?|bitte|ja|nein|yes|no+|was\s+ist\s+das\??|wer\s+bist\s+du\??|was\s+bist\s+du\??|welche[snm]?\s+(model|modell)\b[^!?.…]{0,30}|(what|which)\s+model\b[^!?.…]{0,30}|who\s+are\s+you[^!?.…]{0,20}|what\s+are\s+you[^!?.…]{0,20}|wie\s+geht'?s\??)\s*[!?.…]*$/i;
   const skipTools =
-    mcpTools.length > 0 && !lastHasImages && lastText.length <= 40 && SMALLTALK.test(lastText);
+    mcpTools.length > 0 && !lastHasImages && lastText.length <= 60 && SMALLTALK.test(lastText);
 
   if (mcpTools.length === 0 || skipTools) {
     await providerInst.stream(withIdentity, { onToken: emit });
