@@ -1,9 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { PlanBadge } from "./PlanBadge";
+
+interface SubInfo {
+  plan: string; subscriptionStatus: string; source: string | null;
+  startsAt: string | null; expiresAt: string | null;
+  accessLevels: string[];
+}
 
 export function AccountActions({ email }: { email: string }) {
   const router = useRouter();
@@ -51,8 +58,33 @@ export function AccountActions({ email }: { email: string }) {
     router.refresh();
   }
 
+  const [sub, setSub] = useState<SubInfo | null>(null);
+  useEffect(() => {
+    fetch("/api/me/subscription")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j) setSub(j);
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="space-y-4">
+      <section className="card p-6">
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-white">
+          Subscription <PlanBadge />
+        </h2>
+        {sub ? (
+          <div className="mt-2 space-y-1 text-sm text-zinc-400">
+            <p>Plan: <span className="text-white">{sub.plan}</span> · Status: <span className="text-white">{sub.subscriptionStatus}</span></p>
+            <p>Source: <span className="text-white">{sub.source ?? "—"}</span></p>
+            <p>AI access: <span className="text-white">{(sub.accessLevels ?? []).join(", ")}</span></p>
+            {sub.expiresAt && <p>Expires: <span className="text-white">{new Date(sub.expiresAt).toLocaleString()}</span></p>}
+          </div>
+        ) : (
+          <p className="mt-1 text-sm text-zinc-500">Loading subscription…</p>
+        )}
+      </section>
       <section className="card p-6">
         <h2 className="text-[15px] font-semibold text-white">Session</h2>
         <p className="mt-1 text-sm text-zinc-500">Signed in as {email}.</p>

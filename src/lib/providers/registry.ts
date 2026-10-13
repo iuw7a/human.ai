@@ -1,13 +1,15 @@
 import { getModel } from "../models";
 import { createNvidiaProvider, streamChatWithTools as streamNvidia, chatWithTools as chatNvidia } from "./nvidia";
 import { createGroqProvider, streamChatWithToolsGroq, chatWithToolsGroq } from "./groq";
+import { createIfmProvider, streamChatWithToolsIfm, chatWithToolsIfm } from "./ifm";
 import type { AIProvider } from "./types";
 import type { OpenAIMessage, ToolDef, ToolCallReq } from "./nvidia";
 
-export type ProviderKey = "nvidia" | "groq";
+export type ProviderKey = "nvidia" | "groq" | "ifm";
 
 function checkProvider(p: string): ProviderKey {
   if (p === "groq") return "groq";
+  if (p === "ifm") return "ifm";
   if (p === "nvidia") return "nvidia";
   throw new Error(`Unsupported provider: ${p}`);
 }
@@ -30,6 +32,8 @@ export function createProviderFor(provider: string, providerModelId: string): AI
   switch (checkProvider(provider)) {
     case "groq":
       return createGroqProvider(providerModelId);
+    case "ifm":
+      return createIfmProvider(providerModelId);
     case "nvidia":
       return createNvidiaProvider(providerModelId);
   }
@@ -46,6 +50,8 @@ export async function streamChatWithToolsFor(
   switch (checkProvider(provider)) {
     case "groq":
       return streamChatWithToolsGroq(providerModelId, openAiMessages, tools, opts);
+    case "ifm":
+      return streamChatWithToolsIfm(providerModelId, openAiMessages, tools, opts);
     case "nvidia":
       return streamNvidia(providerModelId, openAiMessages, tools, opts);
   }
@@ -62,6 +68,8 @@ export async function chatWithToolsFor(
   switch (checkProvider(provider)) {
     case "groq":
       return chatWithToolsGroq(providerModelId, openAiMessages, tools, signal);
+    case "ifm":
+      return chatWithToolsIfm(providerModelId, openAiMessages, tools, signal);
     case "nvidia":
       return chatNvidia(providerModelId, openAiMessages, tools, signal);
   }

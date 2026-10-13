@@ -11,6 +11,7 @@ Live-Flow: `/` → Nachricht schreiben → `/chat/[id]` → Antwort streamt → 
 - **Sidebar**: New Chat (`Strg+K`, legt sofort einen DB-Record an), Chat-Suche, Gruppierung (Heute/Gestern/7/30 Tage), Rename/Delete inline, Realtime-Updates, einklappbar
 - **Plugins** (`/plugins`) und **Library** (`/library`, echte Uploads + Zähler)
 - **Memory** (`/memory`): Einträge werden **in den Chat-Kontext injiziert** (personalisierte Antworten), CRUD, strikt user-isoliert
+- **Humi (`/urhumi`)**: persönlicher KI-Assistent pro User — eigene Humis erstellen (Name, Avatar, Persönlichkeit, Anweisungen, Sprache, Stimme, Modell), eigener Chat mit Verlauf, Voice-Input + Server-TTS-Antworten, Memory-Anbindung
 - **Master-System-Prompt** (`src/lib/systemPrompt.ts`): Identität, Entwickler (Abdulrahman Alshouli, Abd al-Ilah), Verhalten, Safety — deduped Rules
 - **Auth**: Login/Signup/Logout/Profile/Account (Name, Passwort, Account-Löschung) via Supabase
 - **White-Label**: UI zeigt nur „Human AI" — keine Modell-/Provider-Namen
@@ -58,6 +59,7 @@ NVIDIA_MODEL_ID=moonshotai/kimi-k3
 Im Supabase **SQL Editor** ausführen (idempotent, mehrfach lauffähig). Erstellt:
 
 - Tabellen: `profiles`, `chats`, `messages`, `memories`, `attachments`
+- Danach `supabase/humi_schema.sql` für Humi (`humi_assistants` + `chats.humi_assistant_id`)
 - Privaten Storage-Bucket `attachments`
 - **Row Level Security**: jeder User sieht nur eigene Rows
 - **Realtime**-Publikation für `chats`/`messages` (Sidebar-Live-Updates)
@@ -122,6 +124,7 @@ Neues Modell = ein Eintrag in `src/lib/models.ts`:
 | `/`, `/chat/[id]` | öffentlich (Speichern nur eingeloggt) |
 | `/login`, `/signup`, `/logout`, `/terms`, `/platform/about` | öffentlich |
 | `/profile`, `/account`, `/memory`, `/platform`, `/plugins`, `/library` | Login nötig |
+| `/urhumi`, `/urhumi/[id]`, `/urhumi/[id]/edit` | Login nötig (`/urhumi` zeigt ausgeloggt Hero + Login-CTA) |
 
 ## Sicherheit
 

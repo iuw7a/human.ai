@@ -1,8 +1,8 @@
 export interface ModelConfig {
   /** Slug used in URLs, e.g. "kimi-k3" */
   id: string;
-  /** Provider key, e.g. "nvidia" or "groq" */
-  provider: "nvidia" | "groq";
+  /** Provider key, e.g. "nvidia", "groq" or "ifm" */
+  provider: "nvidia" | "groq" | "ifm";
   /** Display name */
   name: string;
   /** Short description shown in UI */
@@ -55,6 +55,16 @@ export const models: Record<string, ModelConfig> = {
     providerModelId:
       process.env.NVIDIA_MODEL_ID ?? "moonshotai/kimi-k3",
     vision: true,
+    streaming: true,
+    maxImageSizeMB: 8,
+  },
+  "ifm-k2": {
+    id: "ifm-k2",
+    provider: "ifm",
+    name: "Human AI",
+    description: "The Human AI large model — deep reasoning, long context.",
+    providerModelId: "IFM/K2-Horizon-375B-A23B",
+    vision: false,
     streaming: true,
     maxImageSizeMB: 8,
   },

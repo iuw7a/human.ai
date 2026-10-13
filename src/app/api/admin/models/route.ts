@@ -4,6 +4,14 @@ import { createAdminSupabase } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
+function normPlan(v: unknown): "free" | "plus" | "pro" {
+  return v === "plus" || v === "pro" ? v : "free";
+}
+
+function normAccess(v: unknown): "light" | "pro" | "high" | "extra" {
+  return v === "pro" || v === "high" || v === "extra" ? v : "light";
+}
+
 /** GET /api/admin/models — DB models (seeded from code registry) */
 export async function GET() {
   const adminUser = await getAdmin();
@@ -18,13 +26,13 @@ export async function POST(req: NextRequest) {
   try {
     const b = (await req.json()) as {
       slug?: string; name?: string; provider?: string; provider_model_id?: string;
-      vision?: boolean; plan?: string;
+      vision?: boolean; plan?: string; access_level?: string;
     };
     if (!b.slug || !b.provider_model_id || !b.name) {
       return Response.json({ error: "slug, name and provider_model_id required." }, { status: 400 });
     }
     const slug = b.slug.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 48);
-    const provider = b.provider === "groq" ? "groq" : "nvidia";
+    const provider = b.provider === "groq" ? "groq" : b.provider === "ifm" ? "ifm" : "nvidia";
     const admin = createAdminSupabase();
     const { error } = await admin.from("admin_models").insert({
       slug,
@@ -33,7 +41,8 @@ export async function POST(req: NextRequest) {
       provider_model_id: b.provider_model_id.slice(0, 160),
       vision: b.vision !== false,
       enabled: true,
-      plan: b.plan === "plus" ? "plus" : "free",
+      plan: normPlan(b.plan),
+      access_level: normAccess(b.access_level ?? b.plan),
       sort: 99,
       is_default: false,
     });
@@ -52,22 +61,23 @@ export async function PUT(req: NextRequest) {
   try {
     const b = (await req.json()) as {
       slug?: string; name?: string; provider?: string; provider_model_id?: string; vision?: boolean;
-      enabled?: boolean; plan?: string; sort?: number; is_default?: boolean;
+      enabled?: boolean; plan?: string; access_level?: string; sort?: number; is_default?: boolean;
     };
     if (!b.slug) return Response.json({ error: "slug required." }, { status: 400 });
     const admin = createAdminSupabase();
     const patch: Record<string, unknown> = {};
     if (b.name !== undefined) patch.name = b.name.slice(0, 80);
     if (b.provider !== undefined) {
-      if (b.provider !== "nvidia" && b.provider !== "groq") {
-        return Response.json({ error: "provider must be nvidia or groq." }, { status: 400 });
+      if (b.provider !== "nvidia" && b.provider !== "groq" && b.provider !== "ifm") {
+        return Response.json({ error: "provider must be nvidia, groq or ifm." }, { status: 400 });
       }
       patch.provider = b.provider;
     }
     if (b.provider_model_id !== undefined) patch.provider_model_id = b.provider_model_id.slice(0, 160);
     if (b.vision !== undefined) patch.vision = !!b.vision;
     if (b.enabled !== undefined) patch.enabled = !!b.enabled;
-    if (b.plan !== undefined) patch.plan = b.plan === "plus" ? "plus" : "free";
+    if (b.plan !== undefined) patch.plan = normPlan(b.plan);
+    if (b.access_level !== undefined) patch.access_level = normAccess(b.access_level);
     if (b.sort !== undefined) patch.sort = Number(b.sort) || 0;
     if (b.is_default !== undefined) patch.is_default = !!b.is_default;
     if (patch.is_default) {

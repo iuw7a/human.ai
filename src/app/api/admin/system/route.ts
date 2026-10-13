@@ -4,6 +4,24 @@ import { createAdminSupabase } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+async function probe(name: string, base: string, key: string | undefined) {
+  if (!key) return { name, status: "error" as const, detail: "API key not configured" };
+  try {
+    const t0 = Date.now();
+    const res = await fetch(`${base}/models`, {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    return {
+      name,
+      status: res.ok ? ("healthy" as const) : ("error" as const),
+      detail: res.ok ? `reachable in ${Date.now() - t0} ms` : `HTTP ${res.status}`,
+    };
+  } catch (e) {
+    return { name, status: "error" as const, detail: e instanceof Error ? e.message : "unreachable" };
+  }
+}
+
 /** GET /api/admin/system — real health checks (no secrets exposed). */
 export async function GET() {
   const adminUser = await getAdmin();
@@ -37,25 +55,33 @@ export async function GET() {
     checks.push({ name: "Storage", status: "error", detail: e instanceof Error ? e.message : "unreachable" });
   }
 
-  // AI provider (models list — proves key + connectivity, reveals nothing secret)
+  // AI providers (both configured integrations; keys never exposed)
+  checks.push(
+    await probe(
+      "AI provider (NVIDIA)",
+      process.env.NVIDIA_BASE_URL ?? "https://integrate.api.nvidia.com/v1",
+      process.env.NVIDIA_API_KEY
+    )
+  );
+  checks.push(
+    await probe(
+      "AI provider (Groq)",
+      process.env.GROQ_BASE_URL ?? "https://api.groq.com/openai/v1",
+      process.env.GROQ_API_KEY
+    )
+  );
+
+  // Subscription schema sanity (plan rules table present?)
   try {
-    const key = process.env.NVIDIA_API_KEY;
-    if (!key) {
-      checks.push({ name: "AI provider", status: "error", detail: "NVIDIA_API_KEY not configured" });
-    } else {
-      const t0 = Date.now();
-      const res = await fetch(`${process.env.NVIDIA_BASE_URL ?? "https://integrate.api.nvidia.com/v1"}/models`, {
-        headers: { Authorization: `Bearer ${key}` },
-        signal: AbortSignal.timeout(15000),
-      });
-      checks.push({
-        name: "AI provider",
-        status: res.ok ? "healthy" : "error",
-        detail: res.ok ? `reachable in ${Date.now() - t0} ms` : `HTTP ${res.status}`,
-      });
-    }
-  } catch (e) {
-    checks.push({ name: "AI provider", status: "error", detail: e instanceof Error ? e.message : "unreachable" });
+    const admin = createAdminSupabase();
+    const { error } = await admin.from("plan_access_rules").select("plan", { count: "exact", head: true });
+    checks.push({
+      name: "Subscriptions",
+      status: error ? "warning" : "healthy",
+      detail: error ? "plan_access_rules missing — run supabase/subscriptions_schema.sql" : "plan rules ok",
+    });
+  } catch {
+    checks.push({ name: "Subscriptions", status: "warning", detail: "could not query" });
   }
 
   // Errors in last 24h

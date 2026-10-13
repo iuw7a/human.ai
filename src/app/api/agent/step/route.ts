@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { resolveDbModel, logAppError } from "@/lib/admin";
+import { getEffectiveSubscription, canAccessModel, upgradeMessage } from "@/lib/subscriptions";
 import { chatWithToolsFor } from "@/lib/providers/registry";
 import {
   getSession,
@@ -93,6 +94,14 @@ export async function POST(req: NextRequest) {
 
     const model = await resolveDbModel("human-ai");
     const providerModelId = model?.providerModelId ?? "meta/llama-3.2-11b-vision-instruct";
+    // Entitlement check: fixed model still gated by server-side subscription.
+    if (model) {
+      const sub = await getEffectiveSubscription(user.id);
+      const norm = { plan: model.plan, access_level: model.access_level } as never;
+      if (!canAccessModel(sub, norm)) {
+        return Response.json({ error: upgradeMessage(model.access_level), upgrade: true }, { status: 403 });
+      }
+    }
 
     // 2) Decide (single model call with browser tools).
     const { text, toolCalls } = await chatWithToolsFor(

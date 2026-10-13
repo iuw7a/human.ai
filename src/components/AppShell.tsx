@@ -9,17 +9,29 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  let chats: { id: string; title: string | null; model_id: string; updated_at: string }[] = [];
+  let chats: { id: string; title: string | null; model_id: string; updated_at: string; humi_assistant_id?: string | null }[] = [];
   let dbError = false;
   let plan: "all" | "free" | "plus" = "all";
   if (user) {
-    const { data, error } = await supabase
-      .from("chats")
-      .select("id,title,model_id,updated_at")
-      .order("updated_at", { ascending: false })
-      .limit(30);
-    chats = data ?? [];
-    dbError = !!error;
+    try {
+      const { data, error } = await supabase
+        .from("chats")
+        .select("id,title,model_id,updated_at,humi_assistant_id")
+        .order("updated_at", { ascending: false })
+        .limit(30);
+      if (error) throw error;
+      // Humi conversations live on /urhumi — keep the main sidebar to regular chats.
+      chats = ((data ?? []) as typeof chats).filter((c) => !c.humi_assistant_id);
+    } catch {
+      // Pre-migration database (no humi_assistant_id yet): previous behavior.
+      const { data, error } = await supabase
+        .from("chats")
+        .select("id,title,model_id,updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(30);
+      chats = data ?? [];
+      dbError = !!error;
+    }
     const { data: profile } = await supabase
       .from("profiles")
       .select("plan")

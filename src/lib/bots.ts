@@ -216,15 +216,21 @@ export function missingTableResponse(): Response {
   );
 }
 
-/** True when the user holds an active Pro (plus) subscription. SERVER ONLY. */
+/** True when the user holds an active paid subscription (plus or pro, not expired/suspended). SERVER ONLY. */
 export async function userIsPro(userId: string): Promise<boolean> {
   try {
-    const admin = createAdminSupabase();
-    const { data } = await admin.from("profiles").select("plan").eq("id", userId).single();
-    return (data?.plan ?? "free") === "plus";
+    const { getEffectiveSubscription } = await import("./subscriptions");
+    const sub = await getEffectiveSubscription(userId);
+    return sub.hasPremium;
   } catch {
     return false;
   }
+}
+
+/** Effective subscription for entitlement checks (re-export to avoid cycles). SERVER ONLY. */
+export async function userSubscription(userId: string) {
+  const { getEffectiveSubscription } = await import("./subscriptions");
+  return getEffectiveSubscription(userId);
 }
 
 /** Load a bot by slug, enforcing ownership. Returns null when missing/foreign. SERVER ONLY. */
@@ -259,13 +265,13 @@ export const OFFICIAL_BOT_SLUGS = new Set(["humi", "codey", "study", "research",
 
 /** Validate a model slug for bot use (exists + enabled). Returns provider model info. */
 export async function resolveBotModel(modelId: string): Promise<
-  | { ok: true; provider: string; providerModelId: string; plan: "free" | "plus"; vision: boolean }
+  | { ok: true; provider: string; providerModelId: string; plan: "free" | "plus" | "pro"; access_level: "light" | "pro" | "high" | "extra"; vision: boolean }
   | { ok: false; error: string }
 > {
   const m = await resolveDbModel(modelId);
   if (!m) return { ok: false, error: `Unknown model "${modelId}".` };
   if (!m.enabled) return { ok: false, error: "This model is currently disabled." };
-  return { ok: true, provider: m.provider, providerModelId: m.providerModelId, plan: m.plan, vision: m.vision };
+  return { ok: true, provider: m.provider, providerModelId: m.providerModelId, plan: m.plan, access_level: m.access_level, vision: m.vision };
 }
 
 /**
@@ -274,7 +280,7 @@ export async function resolveBotModel(modelId: string): Promise<
  * is NVIDIA, else the first enabled NVIDIA model. Never Groq.
  */
 export async function resolveNvidiaBotModel(preferredSlug: string): Promise<
-  | { ok: true; provider: string; providerModelId: string; plan: "free" | "plus"; vision: boolean; slug: string }
+  | { ok: true; provider: string; providerModelId: string; plan: "free" | "plus" | "pro"; access_level: "light" | "pro" | "high" | "extra"; vision: boolean; slug: string }
   | { ok: false; error: string }
 > {
   const all = await listDbModels();
@@ -291,6 +297,7 @@ export async function resolveNvidiaBotModel(preferredSlug: string): Promise<
     provider: "nvidia",
     providerModelId: pick.providerModelId,
     plan: pick.plan,
+    access_level: pick.access_level,
     vision: pick.vision,
     slug: pick.id,
   };

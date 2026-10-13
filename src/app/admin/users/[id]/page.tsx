@@ -4,6 +4,8 @@ import { createAdminSupabase } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin";
 import { PageHeader, StatusPill } from "@/components/admin/ui";
 import { UserActions } from "@/components/admin/UserActions";
+import { SubscriptionBadge, SourceBadge } from "@/components/SubscriptionBadge";
+import { getEntitlements } from "@/lib/subscriptions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +21,7 @@ export default async function AdminUserDetail({ params }: { params: { id: string
     (user.banned_until != null && new Date(user.banned_until).getTime() > Date.now()) ||
     profile?.status === "banned";
 
-  const [chats, messages, memories, files, feedback, keys, tickets, events] = await Promise.all([
+  const [chats, messages, memories, files, feedback, keys, tickets, events, subEvents] = await Promise.all([
     admin.from("chats").select("id,title,created_at", { count: "exact" }).eq("user_id", user.id).order("created_at", { ascending: false }).limit(5),
     admin.from("messages").select("id", { count: "exact", head: true }).eq("user_id", user.id),
     admin.from("memories").select("id", { count: "exact", head: true }).eq("user_id", user.id),
@@ -28,10 +30,22 @@ export default async function AdminUserDetail({ params }: { params: { id: string
     admin.from("api_keys").select("id,name,prefix,enabled,usage_count,last_used_at,created_at").eq("user_id", user.id),
     admin.from("support_tickets").select("id,subject,status,created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(10),
     admin.from("audit_logs").select("action,created_at").eq("target", user.id).order("created_at", { ascending: false }).limit(10),
+    admin.from("subscription_events").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(30),
   ]);
 
   const plan = profile?.plan ?? "free";
   const status = profile?.status ?? "active";
+  const subStatus = profile?.subscription_status ?? (plan === "free" ? "free" : "active");
+  const source = profile?.subscription_source ?? null;
+
+  // Resolve changer emails for subscription history.
+  const changerIds = [...new Set((subEvents.data ?? []).map((e) => e.changed_by).filter(Boolean))] as string[];
+  let changerMap: Record<string, string> = {};
+  if (changerIds.length > 0) {
+    const { data: changers } = await admin.from("profiles").select("id,email,name").in("id", changerIds);
+    changerMap = Object.fromEntries((changers ?? []).map((c) => [c.id, c.email ?? c.name ?? c.id.slice(0, 8)]));
+  }
+  const entitlements = await getEntitlements().catch(() => null);
 
   return (
     <div>
@@ -43,21 +57,42 @@ export default async function AdminUserDetail({ params }: { params: { id: string
 
       <div className="card grid gap-4 p-5 sm:grid-cols-2">
         <div className="space-y-1.5 text-sm">
+          <div className="flex items-center gap-3">
+            {profile?.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={profile.avatar_url} alt="" className="h-12 w-12 rounded-full object-cover ring-1 ring-ink-700" />
+            ) : (
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-ink-700 text-lg font-semibold text-white">
+                {((profile?.name ?? user.email ?? "?")[0] ?? "?").toUpperCase()}
+              </span>
+            )}
+            <div>
+              <SubscriptionBadge name={profile?.name ?? user.email ?? "User"} plan={plan} />
+              <p className="mt-0.5 font-mono text-[11px] text-zinc-500">{user.id}</p>
+            </div>
+          </div>
           <p><span className="text-zinc-500">Email:</span> <span className="text-white">{user.email}</span></p>
           <p><span className="text-zinc-500">Registered:</span> <span className="text-white">{new Date(user.created_at).toLocaleString()}</span></p>
+          <p><span className="text-zinc-500">Account created:</span> <span className="text-white">{profile?.created_at ? new Date(profile.created_at).toLocaleString() : "—"}</span></p>
           <p><span className="text-zinc-500">Last login:</span> <span className="text-white">{user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : "—"}</span></p>
           <p><span className="text-zinc-500">Providers:</span> <span className="text-white">{(user.app_metadata?.providers ?? []).join(", ") || "—"}</span></p>
         </div>
         <div className="space-y-1.5 text-sm">
-          <p className="flex items-center gap-2"><span className="text-zinc-500">Plan:</span> <StatusPill value={plan} tone={plan === "plus" ? "amber" : "gray"} /></p>
-          <p className="flex items-center gap-2"><span className="text-zinc-500">Status:</span> <StatusPill value={banned ? "banned" : status} tone={banned || status !== "active" ? "red" : "green"} /></p>
+          <p className="flex items-center gap-2"><span className="text-zinc-500">Plan:</span> <StatusPill value={plan} tone={plan === "pro" ? "blue" : plan === "plus" ? "amber" : "gray"} /></p>
+          <p className="flex items-center gap-2"><span className="text-zinc-500">Subscription:</span> <StatusPill value={banned ? "banned" : subStatus} tone={banned ? "red" : subStatus === "active" ? "green" : subStatus === "suspended" ? "red" : subStatus === "expired" ? "amber" : "gray"} /></p>
+          <p className="flex items-center gap-2"><span className="text-zinc-500">Account:</span> <StatusPill value={banned ? "banned" : status} tone={banned || status !== "active" ? "red" : "green"} /></p>
           <p className="flex items-center gap-2"><span className="text-zinc-500">Role:</span> <StatusPill value={profile?.role ?? "user"} tone="blue" /></p>
+          <p><SourceBadge source={source} /></p>
+          <p><span className="text-zinc-500">Start:</span> <span className="text-white">{profile?.subscription_starts_at ? new Date(profile.subscription_starts_at).toLocaleString() : "—"}</span></p>
+          <p><span className="text-zinc-500">Expires:</span> <span className="text-white">{profile?.subscription_expires_at ? new Date(profile.subscription_expires_at).toLocaleString() : "—"}</span></p>
+          {profile?.subscription_provider_ref && <p><span className="text-zinc-500">Provider ref:</span> <span className="font-mono text-white">{profile.subscription_provider_ref}</span></p>}
+          <p><span className="text-zinc-500">AI access:</span> <span className="text-white">{entitlements ? (entitlements[plan as keyof typeof entitlements] ?? ["light"]).join(", ") : "light"}</span></p>
           <p><span className="text-zinc-500">Chats:</span> <span className="text-white">{chats.count ?? 0}</span> · <span className="text-zinc-500">Messages:</span> <span className="text-white">{messages.count ?? 0}</span> · <span className="text-zinc-500">Memories:</span> <span className="text-white">{memories.count ?? 0}</span></p>
         </div>
       </div>
 
-      <h2 className="mb-2 mt-6 text-sm font-semibold text-white">Admin actions</h2>
-      <UserActions id={user.id} plan={plan} banned={banned} status={status} existingNote={profile?.admin_notes ?? ""} />
+      <h2 className="mb-2 mt-6 text-sm font-semibold text-white">Subscription actions</h2>
+      <UserActions id={user.id} plan={plan} banned={banned} status={status} subscriptionStatus={subStatus} existingNote={profile?.admin_notes ?? ""} />
 
       {profile?.admin_notes && (
         <div className="card mt-4 p-4">
@@ -65,6 +100,20 @@ export default async function AdminUserDetail({ params }: { params: { id: string
           <p className="mt-1 text-sm text-zinc-300">{profile.admin_notes}</p>
         </div>
       )}
+
+      <div className="card mt-4 p-4">
+        <h3 className="mb-2 text-sm font-semibold text-white">Subscription history</h3>
+        {(subEvents.data ?? []).length === 0 && <p className="text-xs text-zinc-500">No changes recorded yet.</p>}
+        {(subEvents.data ?? []).map((e) => (
+          <p key={e.id} className="border-b border-ink-800/40 py-1.5 text-[13px] text-zinc-300 last:border-0">
+            {e.from_plan} → <b>{e.to_plan}</b>
+            {e.source && <span className="ml-1.5 rounded-full bg-ink-800 px-1.5 py-0.5 text-[11px] text-zinc-400">{e.source}</span>}
+            {e.status && <span className="ml-1 text-[11px] text-zinc-500">({e.status})</span>}
+            {e.changed_by && <span className="ml-1.5 text-zinc-400">by {changerMap[e.changed_by] ?? String(e.changed_by).slice(0, 8)}</span>}
+            <span className="text-zinc-600"> · {new Date(e.created_at).toLocaleString()}</span>
+          </p>
+        ))}
+      </div>
 
       <div className="mt-6 grid gap-3 lg:grid-cols-2">
         <div className="card p-4">

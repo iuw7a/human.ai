@@ -147,9 +147,19 @@ export async function maintenanceState(): Promise<{ on: boolean; message: string
 
 export interface DbModel extends ModelConfig {
   enabled: boolean;
-  plan: "free" | "plus";
+  plan: "free" | "plus" | "pro";
+  /** AI capability tier: light (free), pro, high, extra (pro-only). */
+  access_level: "light" | "pro" | "high" | "extra";
   sort: number;
   is_default: boolean;
+}
+
+function normalizeModelPlan(v: unknown): DbModel["plan"] {
+  return v === "plus" || v === "pro" ? v : "free";
+}
+
+function normalizeAccessLevel(v: unknown): DbModel["access_level"] {
+  return v === "pro" || v === "high" || v === "extra" ? v : "light";
 }
 
 /** DB-backed model registry (falls back to code registry if table missing). */
@@ -163,7 +173,10 @@ export async function listDbModels(): Promise<DbModel[]> {
     if (error || !data || data.length === 0) throw new Error("fallback");
     return data.map((m) => ({
       id: m.slug,
-      provider: (m.provider === "groq" ? "groq" : "nvidia") as "nvidia" | "groq",
+      provider: (m.provider === "groq" ? "groq" : m.provider === "ifm" ? "ifm" : "nvidia") as
+        | "nvidia"
+        | "groq"
+        | "ifm",
       name: m.name,
       description: "",
       providerModelId: m.provider_model_id,
@@ -171,7 +184,11 @@ export async function listDbModels(): Promise<DbModel[]> {
       streaming: true,
       maxImageSizeMB: 8,
       enabled: !!m.enabled,
-      plan: m.plan === "plus" ? "plus" : "free",
+      plan: normalizeModelPlan(m.plan),
+      access_level: normalizeAccessLevel(
+        (m as { access_level?: unknown }).access_level ??
+          (m.plan === "plus" || m.plan === "pro" ? "pro" : "light")
+      ),
       sort: m.sort ?? 0,
       is_default: !!m.is_default,
     }));
@@ -180,6 +197,7 @@ export async function listDbModels(): Promise<DbModel[]> {
       ...m,
       enabled: true,
       plan: "free" as const,
+      access_level: "light" as const,
       sort: i,
       is_default: m.id === DEFAULT_MODEL_ID,
     }));

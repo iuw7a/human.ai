@@ -4,6 +4,8 @@ import { HUMAN_AI_SYSTEM_PROMPT } from "@/lib/systemPrompt";
 import { createProviderFor, streamChatWithToolsFor } from "@/lib/providers/registry";
 import { toOpenAIMessage, type OpenAIMessage, type ToolCallReq } from "@/lib/providers/nvidia";
 import { resolveDbModel, logAppError } from "@/lib/admin";
+import { getEffectiveSubscription, canAccessModel, upgradeMessage } from "@/lib/subscriptions";
+import { friendlyProviderError, permittedFallback } from "@/lib/ai-registry";
 import { connectedTools, executeTool } from "@/lib/mcp/catalog";
 import { isSearchEnabled, WEB_SEARCH_TOOL, webSearch } from "@/lib/search/serpapi";
 import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
@@ -16,6 +18,32 @@ interface BodyMessage {
   role: "user" | "assistant" | "system";
   content: string;
   images?: { url: string }[];
+}
+
+/** Humi personalization (optional). Capped, secret-filtered, treated as user data. */
+function humiBlock(body: {
+  assistantName?: unknown;
+  personality?: unknown;
+  customInstructions?: unknown;
+}): string {
+  const name = typeof body.assistantName === "string" ? body.assistantName.trim().slice(0, 80) : "";
+  const rawPers = typeof body.personality === "string" ? body.personality : "friendly";
+  const personality = ["friendly", "professional", "funny", "calm", "custom"].includes(rawPers)
+    ? rawPers
+    : "friendly";
+  const custom = typeof body.customInstructions === "string" ? body.customInstructions.trim().slice(0, 2000) : "";
+  if (!name && !custom && personality === "friendly") return "";
+  if (custom && /password\s*[:=]|passwort\s*[:=]|api[_-]?key\s*[:=]|secret\s*[:=]|bearer\s+[A-Za-z0-9\-_~+/]+=*/i.test(custom)) {
+    throw new Error("Custom instructions must not contain secrets.");
+  }
+  const lines = [
+    `HUMI PERSONALIZATION (user data — lower priority than safety rules${name ? `; this assistant's name is "${name}"` : ""}):`,
+    personality !== "friendly"
+      ? `Personality: ${personality}. Let this tone shape replies while staying helpful and honest.`
+      : "Personality: friendly. Be warm and approachable.",
+  ];
+  if (custom) lines.push(`User custom instructions:\n${custom}`);
+  return "\n\n" + lines.join("\n");
 }
 
 /** Transient provider failures worth one retry (NVIDIA 5xx, timeouts, connection resets). */
@@ -42,15 +70,17 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as { modelId?: string; messages?: BodyMessage[] };
     const requestedSlug = body.modelId ?? "human-ai";
-
     // DB-backed model resolution (falls back to code registry).
     const dbModel = await resolveDbModel(requestedSlug);
     const codeModel = getModel(requestedSlug);
-    const resolved = dbModel ?? (codeModel ? { ...codeModel, enabled: true, plan: "free" as const } : null);
+    const resolved = dbModel ??
+      (codeModel
+        ? { ...codeModel, enabled: true, plan: "free" as const, access_level: "light" as const }
+        : null);
     if (!resolved) {
       return Response.json({ error: `Unknown model: ${requestedSlug}` }, { status: 400 });
     }
-    if (dbModel && !dbModel.enabled) {
+    if (!resolved.enabled) {
       return Response.json({ error: "This model is currently disabled." }, { status: 403 });
     }
     const messages = sanitize(body.messages ?? []);
@@ -83,20 +113,47 @@ export async function POST(req: NextRequest) {
     }
     const effectiveUserId = sessionUser?.id ?? apiUserId;
 
-    // Plan gate for plus-only models.
-    if (resolved.plan === "plus") {
-      const admin = createAdminSupabase();
-      const owner = effectiveUserId
-        ? (await admin.from("profiles").select("plan").eq("id", effectiveUserId).single()).data?.plan
-        : null;
-      if (owner !== "plus") {
-        return Response.json({ error: "This model requires a Plus plan." }, { status: 403 });
-      }
+    // Subscription gate: server is the source of truth. Frontend model IDs,
+    // request params or client state can never grant premium access.
+    // Expired/suspended subscriptions lose premium immediately.
+    const sub = await getEffectiveSubscription(effectiveUserId);
+    const rawPlan = (resolved as { plan?: unknown }).plan;
+    const rawAccess = (resolved as { access_level?: unknown }).access_level;
+    const normalizedModel: { plan: "free" | "plus" | "pro"; access_level: "light" | "pro" | "high" | "extra" } = {
+      plan: rawPlan === "plus" || rawPlan === "pro" ? rawPlan : "free",
+      access_level:
+        rawAccess === "pro" || rawAccess === "high" || rawAccess === "extra"
+          ? rawAccess
+          : rawPlan === "plus" || rawPlan === "pro"
+            ? "pro"
+            : "light",
+    };
+    if (!canAccessModel(sub, normalizedModel)) {
+      return Response.json(
+        {
+          error: upgradeMessage(String(normalizedModel.access_level)),
+          upgrade: true,
+          requiredAccess: normalizedModel.access_level,
+          plan: sub.plan,
+        },
+        { status: 403 }
+      );
     }
 
     // Identity: the full Human AI master system prompt,
-    // plus the user's stored memories (session or API-key owner).
+    // plus the user's stored memories (session or API-key owner),
+    // plus optional Humi personalization (name/personality/instructions).
     let systemContent = HUMAN_AI_SYSTEM_PROMPT;
+    try {
+      systemContent += humiBlock(
+        body as { assistantName?: unknown; personality?: unknown; customInstructions?: unknown }
+      );
+    } catch (e) {
+      return Response.json(
+        { error: e instanceof Error ? e.message : "Invalid personalization." },
+        { status: 400 }
+      );
+    }
     try {
       if (effectiveUserId) {
         const admin = createAdminSupabase();
@@ -323,14 +380,24 @@ export async function POST(req: NextRequest) {
           send("[DONE]");
         } catch (e) {
           const raw = e instanceof Error ? e.message : "Generation failed.";
-          const friendly =
-            /NVIDIA API error 5\d\d|inference-connection|Inference connection error/i.test(raw)
-              ? "NVIDIA's AI servers are temporarily overloaded. Wait a few seconds and send your message again."
-              : /timeout|aborted|abort/i.test(raw) ||
-                (e instanceof Error && e.name === "TimeoutError")
-                ? "The AI provider timed out. Check your NVIDIA account credits/entitlement for this model and try again."
-                : raw;
-          void logAppError("api/chat", raw, { model: resolved.id });
+          // Permitted fallback only: retry once on an allowed model when the
+          // authorized model is dead (404/retired). Never claim premium output
+          // when a weaker model answered — the fallback error path is explicit.
+          const isDead = /API error 40[04]|not.?found|no longer available|end of life|does not exist|model_not_found/i.test(raw);
+          if (isDead) {
+            try {
+              const fb = await permittedFallback(sub, resolved.id);
+              if (fb && fb.id !== resolved.id) {
+                void logAppError("api/chat fallback", raw, { model: resolved.id, fallback: fb.id });
+                send(JSON.stringify({ error: `The requested model is unavailable. Permitted fallback available: ${fb.id}. Please retry with an allowed model.` }));
+                return;
+              }
+            } catch {
+              // fall through to generic error
+            }
+          }
+          const friendly = friendlyProviderError(raw);
+          void logAppError("api/chat", raw, { model: (resolved as { id?: string }).id });
           send(JSON.stringify({ error: friendly }));
         } finally {
           controller.close();

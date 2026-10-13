@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   MessageSquarePlus,
   MessagesSquare,
+  Heart,
   Puzzle,
   LibraryBig,
   Plug,
@@ -28,6 +29,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { Logo } from "./Logo";
+import { PlanBadge } from "./PlanBadge";
 import { createClient } from "@/lib/supabase/client";
 import { DEFAULT_MODEL_ID } from "@/lib/models";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
@@ -41,6 +43,7 @@ interface ChatItem {
 
 /** Workspace-only navigation. Account-level pages live in the user menu. */
 const NAV = [
+  { href: "/urhumi", label: "Humi", icon: Heart },
   { href: "/agent", label: "Agent", icon: Bot },
   { href: "/bots", label: "Bots", icon: Store },
   { href: "/bots/mine", label: "My Bots", icon: Sparkles },
@@ -391,8 +394,9 @@ export function Sidebar({
             <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-ink-900 bg-emerald-500" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-medium text-zinc-100">
-              {userName}
+            <span className="flex items-center gap-1.5 truncate text-[13px] font-medium text-zinc-100">
+              <span className="truncate">{userName}</span>
+              <PlanBadge compact />
             </span>
             <span className="block truncate text-xs text-zinc-500">{user.email}</span>
           </span>

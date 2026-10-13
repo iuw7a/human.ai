@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { resolveDbModel, logAppError } from "@/lib/admin";
+import { getEffectiveSubscription, canAccessModel, upgradeMessage } from "@/lib/subscriptions";
 import {
   getDesktopSession,
   destroyDesktopSession,
@@ -214,6 +215,12 @@ export async function POST(req: NextRequest) {
 
     const model = await resolveDbModel("human-ai");
     const providerModelId = model?.providerModelId ?? "meta/llama-3.2-11b-vision-instruct";
+    if (model) {
+      const sub = await getEffectiveSubscription(user.id);
+      if (!canAccessModel(sub, { plan: model.plan, access_level: model.access_level } as never)) {
+        return Response.json({ error: upgradeMessage(model.access_level), upgrade: true }, { status: 403 });
+      }
+    }
 
     // 2) Decide with vision (no tools param: endpoint rejects tools+images).
     const userText =

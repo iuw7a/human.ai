@@ -3,6 +3,7 @@ import { createAdminSupabase } from "@/lib/supabase/server";
 import { extractBotMemory, runBotTurn, type BotBodyMessage } from "@/lib/bot-chat";
 import { effectiveOwnerId, getAccessibleBot, resolveNvidiaBotModel, touchBot, userIsPro } from "@/lib/bots";
 import { defaultDbModelSlug, logAppError, resolveDbModel } from "@/lib/admin";
+import { getEffectiveSubscription, canAccessModel } from "@/lib/subscriptions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +55,12 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     ]);
     if (convRes.error || !convRes.data) return Response.json({ error: "Conversation not found." }, { status: 404 });
     if (!model.ok) return Response.json({ error: model.error }, { status: 400 });
+    // Enforce model entitlement for the bot's resolved model as well.
+    // The frontend/bot config can never grant premium access by itself.
+    const botSub = await getEffectiveSubscription(ownerId);
+    if (!canAccessModel(botSub, { plan: model.plan, access_level: (model as { access_level?: unknown }).access_level ?? (model.plan === "free" ? "light" : "pro") } as never)) {
+      return Response.json({ error: "This Bot's model requires an upgrade.", upgrade: true }, { status: 403 });
+    }
     void touchBot(bot.id);
     const lastUserText = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
 
@@ -85,7 +92,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
               {
                 bot,
                 ownerId,
-                provider: fallback.provider === "groq" ? "groq" : "nvidia",
+                provider: fallback.provider === "groq" ? "groq" : fallback.provider === "ifm" ? "ifm" : "nvidia",
                 providerModelId: fallback.providerModelId,
                 messages,
               },

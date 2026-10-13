@@ -11,6 +11,7 @@ import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { DynamicIsland } from "./ai/DynamicIsland";
 import { MascotAvatar } from "./ai/MascotAvatar";
 import { Composer } from "./ai/Composer";
+import { PlanBadge } from "./PlanBadge";
 import { UserMessage, AssistantMessage, ThinkingRow, type SpeakState } from "./ai/Message";
 import { MessageList } from "./ai/MessageList";
 import { useVoice } from "./ai/useVoice";
@@ -344,7 +345,24 @@ export function ChatView({
     setMode(m);
   }, []);
 
-  const model = getModel(modelId);
+  // Subscription-aware model switching (persisted to the chat row; server re-verifies).
+  const [activeModelId, setActiveModelId] = useState(modelId);
+  useEffect(() => setActiveModelId(modelId), [modelId]);
+  const modelIdRef = useRef(modelId);
+  modelIdRef.current = activeModelId;
+  async function changeModel(next: string) {
+    setActiveModelId(next);
+    if (!user) return;
+    try {
+      const supabase = createClient();
+      await supabase.from("chats").update({ model_id: next }).eq("id", chatId);
+    } catch {
+      // persistence best effort — next send still uses the selected model
+    }
+    router.refresh();
+  }
+
+  const model = getModel(activeModelId);
   const title =
     messages.find((m) => m.role === "user")?.content.slice(0, 40) || "Human AI";
 
@@ -431,7 +449,7 @@ export function ChatView({
       {
         id: chatId,
         user_id: user.id,
-        model_id: modelId,
+        model_id: modelIdRef.current,
         title:
           role === "user" && needsTitle
             ? content.slice(0, 80) || "New conversation"
@@ -511,7 +529,7 @@ export function ChatView({
   async function send(text: string, pendingImages: PendingImage[], modeOverride?: ChatMode) {
     if (sendingRef.current) return;
     if (!model) {
-      setError(`Unknown model "${modelId}".`);
+      setError(`Unknown model "${modelIdRef.current}".`);
       return;
     }
     const m = modeOverride ?? modeRef.current;
@@ -571,7 +589,7 @@ export function ChatView({
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ modelId, messages: apiMessages }),
+      body: JSON.stringify({ modelId: modelIdRef.current, messages: apiMessages }),
     });
     if (!res.ok || !res.body) {
       const errJson = await res.json().catch(() => null);
@@ -902,7 +920,7 @@ export function ChatView({
       <div className="mx-auto max-w-2xl px-4 py-24 text-center">
         <h1 className="text-xl font-semibold text-white">Unknown model</h1>
         <p className="mt-2 text-sm text-zinc-400">
-          The model “{modelId}” is not available on Human AI.
+          The model “{activeModelId}” is not available on Human AI.
         </p>
       </div>
     );
@@ -939,8 +957,8 @@ export function ChatView({
     [voice.ttsSupported, voice.speaking]
   );
   const voteMeta = useMemo(
-    () => (flags.feedback !== false && user ? { chatId, modelId } : null),
-    [flags.feedback, user, chatId, modelId]
+    () => (flags.feedback !== false && user ? { chatId, modelId: activeModelId } : null),
+    [flags.feedback, user, chatId, activeModelId]
   );
 
   // Real live activity only — never placeholder text.
@@ -1001,6 +1019,8 @@ export function ChatView({
                 allowUpload={flags.image_generation !== false}
                 mode={mode}
                 onModeChange={changeMode}
+                modelId={activeModelId}
+                onModelChange={(id) => void changeModel(id)}
                 voiceText={voiceText}
                 onVoiceTextConsumed={clearVoiceText}
                 voice={voiceProp}
@@ -1012,15 +1032,18 @@ export function ChatView({
         </div>
       ) : (
         <>
-          <div className="relative z-10 flex items-center justify-between px-4 py-3 sm:px-6">
-            <p className="max-w-[60%] truncate pl-10 text-sm font-medium text-zinc-200 lg:pl-0">
+          <div className="relative z-10 flex items-center justify-between gap-2 px-4 py-3 sm:px-6">
+            <p className="max-w-[40%] truncate pl-10 text-sm font-medium text-zinc-200 lg:pl-0">
               {title}
             </p>
-            {!user && (
-              <a href="/login" className="text-xs text-zinc-400 hover:text-white">
-                Log in to save chats
-              </a>
-            )}
+            <div className="flex items-center gap-2">
+              {user && <PlanBadge compact />}
+              {!user && (
+                <a href="/login" className="text-xs text-zinc-400 hover:text-white">
+                  Log in to save chats
+                </a>
+              )}
+            </div>
           </div>
           <MessageList
             scrollKey={`${messages.length}:${streamed.length}:${activity?.steps.length ?? 0}:${activity?.status ?? ""}:${mcpUsed.length}`}
@@ -1093,6 +1116,8 @@ export function ChatView({
                 allowUpload={flags.image_generation !== false}
                 mode={mode}
                 onModeChange={changeMode}
+                modelId={activeModelId}
+                onModelChange={(id) => void changeModel(id)}
                 voiceText={voiceText}
                 onVoiceTextConsumed={clearVoiceText}
                 voice={voiceProp}

@@ -65,6 +65,7 @@ const SECTIONS: { title: string; items: { href: string; label: string; icon: Rea
     title: "Platform",
     items: [
       { href: "/admin/models", label: "Models", icon: Boxes },
+      { href: "/admin/providers", label: "Providers", icon: Activity },
       { href: "/admin/feature-flags", label: "Feature Flags", icon: Flag },
       { href: "/admin/maintenance", label: "Maintenance", icon: Wrench },
       { href: "/admin/settings", label: "Settings", icon: Settings },

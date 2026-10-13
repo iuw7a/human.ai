@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowUp, ImagePlus, Loader2, Mic, MicOff, X } from "lucide-react";
 import { ModeSelector, type ChatMode } from "../ModeSelector";
+import { PowerSelector } from "../PowerSelector";
 import type { PendingImage } from "../ChatInput";
 
 const ACCEPTED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -56,6 +57,8 @@ export const Composer = memo(function Composer({
   allowUpload = true,
   mode = "chat",
   onModeChange,
+  modelId,
+  onModelChange,
   initialText = "",
   voiceText,
   onVoiceTextConsumed,
@@ -68,6 +71,8 @@ export const Composer = memo(function Composer({
   allowUpload?: boolean;
   mode?: ChatMode;
   onModeChange?: (mode: ChatMode) => void;
+  modelId?: string;
+  onModelChange?: (id: string) => void;
   initialText?: string;
   voiceText?: string;
   onVoiceTextConsumed?: () => void;
@@ -208,6 +213,9 @@ export const Composer = memo(function Composer({
             onChange={(e) => handleFiles(e.target.files)}
           />
           {onModeChange && <ModeSelector value={mode} getDraft={() => text} onSelect={onModeChange} />}
+          {modelId !== undefined && onModelChange && (
+            <PowerSelector value={modelId} onChange={onModelChange} />
+          )}
           <ToolButton
             onClick={() => fileRef.current?.click()}
             label="Attach image"

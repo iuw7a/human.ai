@@ -29,3 +29,12 @@ Datum: 27.09.2026 · Repo: github.com/iuw7a/human.ai (Branch `main`) · Lokal: `
 
 - `src/lib/systemPrompt.ts` — Master-Prompt · `src/lib/models.ts` — Model-Registry
 - `src/app/api/chat/route.ts` — Streaming + Memory-Injektion · `supabase/schema.sql` — DB
+
+## 10.10.2026 — Humi (`/urhumi`) integriert
+
+- Eigene Humis pro User: `supabase/humi_schema.sql` ausführen (Tabelle `humi_assistants` + RLS owner-only, `chats.humi_assistant_id`)
+- Routen: `/urhumi` (Hero + Liste), `/urhumi/[id]` (Chat), `/urhumi/[id]/edit` (Anpassen) — alle Login-geschützt mit `?next=`-Return
+- APIs: `/api/humi-assistants` (CRUD, max 10), `/api/humi-assistants/[id]/chats`, `/api/tts` (Server-Stimme ar/de/en, keyless)
+- Chat nutzt echten Model-Registry-Slug pro Humi + Master-Prompt + Memory-Injektion (unverändert)
+- Sidebar-Eintrag „Humi“; Humi-Chats aus Haupt-Sidebar gefiltert (Fallback ohne Migration)
+- Build + tsc grün. E2E mit 2 Logins (Isolation) noch offen — API-Tests: anon 401, Redirects 307, TTS 200/MP3.

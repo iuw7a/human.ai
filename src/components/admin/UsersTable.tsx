@@ -5,17 +5,33 @@ import { useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { StatusPill, EmptyState, useToast } from "@/components/admin/ui";
+import { SubscriptionBadge, SourceBadge, planTone, statusTone } from "@/components/SubscriptionBadge";
 
 export interface AdminUserRow {
   id: string;
   email: string;
   name: string;
+  avatar_url: string | null;
   created_at: string;
   last_sign_in_at: string | null;
   banned: boolean;
   plan: string;
   status: string;
   role: string;
+  subscription_status: string;
+  subscription_source: string | null;
+  subscription_starts_at: string | null;
+  subscription_expires_at: string | null;
+  access_levels: string[];
+}
+
+function fmtDate(v: string | null): string {
+  if (!v) return "—";
+  try {
+    return new Date(v).toLocaleDateString();
+  } catch {
+    return "—";
+  }
 }
 
 export function UsersTable({
@@ -82,10 +98,13 @@ export function UsersTable({
         </div>
         <select value={filter} onChange={(e) => go({ filter: e.target.value, page: 1 })} className="input !w-auto">
           <option value="all">All</option>
+          <option value="pro">Pro</option>
           <option value="plus">Plus</option>
           <option value="free">Free</option>
           <option value="banned">Banned</option>
           <option value="active">Active</option>
+          <option value="expired">Expired</option>
+          <option value="suspended">Suspended</option>
         </select>
         <select value={sort} onChange={(e) => go({ sort: e.target.value })} className="input !w-auto">
           <option value="newest">Newest</option>
@@ -96,12 +115,15 @@ export function UsersTable({
       </form>
 
       <div className="card overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
+        <table className="w-full min-w-[1100px] text-left text-sm">
           <thead>
             <tr className="border-b border-ink-800 text-xs uppercase tracking-wider text-zinc-500">
               <th className="px-4 py-3">User</th>
               <th className="px-4 py-3">Plan</th>
-              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Sub. status</th>
+              <th className="px-4 py-3">Source</th>
+              <th className="px-4 py-3">Start / Expiry</th>
+              <th className="px-4 py-3">AI access</th>
               <th className="px-4 py-3">Registered</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
@@ -110,23 +132,47 @@ export function UsersTable({
             {rows.map((u) => (
               <tr key={u.id} className="border-b border-ink-800/60 last:border-0 hover:bg-ink-850/50">
                 <td className="px-4 py-2.5">
-                  <Link href={`/admin/users/${u.id}`} className="font-medium text-white hover:text-accent">
-                    {u.name || "—"}
-                  </Link>
-                  <p className="text-xs text-zinc-500">{u.email}</p>
-                  <p className="font-mono text-[11px] text-zinc-600">{u.id.slice(0, 8)}…</p>
+                  <div className="flex items-center gap-2.5">
+                    {u.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={u.avatar_url} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-ink-700" />
+                    ) : (
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-700 text-xs font-semibold text-white">
+                        {(u.name?.[0] ?? u.email?.[0] ?? "?").toUpperCase()}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <Link href={`/admin/users/${u.id}`} className="hover:text-accent">
+                        <SubscriptionBadge name={u.name} plan={u.plan} />
+                      </Link>
+                      <p className="mt-0.5 text-xs text-zinc-500">{u.email}</p>
+                      <p className="font-mono text-[11px] text-zinc-600" title={u.id}>{u.id.slice(0, 8)}…</p>
+                    </div>
+                  </div>
                 </td>
                 <td className="px-4 py-2.5">
-                  <StatusPill value={u.plan} tone={u.plan === "plus" ? "amber" : "gray"} />
+                  <StatusPill value={u.plan} tone={planTone(u.plan)} />
                 </td>
                 <td className="px-4 py-2.5">
                   <StatusPill
-                    value={u.banned ? "banned" : u.status}
-                    tone={u.banned || u.status !== "active" ? "red" : "green"}
+                    value={u.banned ? "banned" : u.subscription_status}
+                    tone={u.banned ? "red" : statusTone(u.subscription_status)}
                   />
+                  {u.status !== "active" && !u.banned && (
+                    <p className="mt-1 text-[11px] text-zinc-500">acct: {u.status}</p>
+                  )}
+                </td>
+                <td className="px-4 py-2.5">
+                  <SourceBadge source={u.subscription_source} />
                 </td>
                 <td className="px-4 py-2.5 text-xs text-zinc-400">
-                  {new Date(u.created_at).toLocaleDateString()}
+                  <p>{fmtDate(u.subscription_starts_at)} → {fmtDate(u.subscription_expires_at)}</p>
+                </td>
+                <td className="px-4 py-2.5 text-xs text-zinc-400">
+                  {(u.access_levels ?? []).join(", ") || "light"}
+                </td>
+                <td className="px-4 py-2.5 text-xs text-zinc-400">
+                  {fmtDate(u.created_at)}
                 </td>
                 <td className="px-4 py-2.5 text-right">
                   <div className="flex justify-end gap-1.5">
