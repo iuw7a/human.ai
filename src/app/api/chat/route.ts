@@ -222,9 +222,9 @@ export async function POST(req: NextRequest) {
     const lastText = (lastUser?.content ?? "").trim();
     const lastHasImages = (lastUser?.images ?? []).length > 0;
     const SMALLTALK =
-      /^(yo|hi+|hey+|hallo+|hello+|servus|moin|na+|ok|okay+|danke\w*|thanks?|bitte|ja|nein|yes|no+|was\s+ist\s+das\??|wer\s+bist\s+du\??|wie\s+geht'?s\??)\s*[!?.…]*$/i;
+      /^(yo|hi+|hey+|hallo+|hello+|servus|moin|na+|ok|okay+|danke\w*|thanks?|bitte|ja|nein|yes|no+|was\s+ist\s+das\??|wer\s+bist\s+du\??|was\s+bist\s+du\??|welche[snm]?\s+(model|modell|ki\b|ai\b)|what\s+model|which\s+model|who\s+are\s+you\??|what\s+are\s+you\??|wie\s+geht'?s\??)\s*[!?.…]*$/i;
     const skipTools =
-      mcpTools.length > 0 && !lastHasImages && lastText.length <= 40 && SMALLTALK.test(lastText);
+      mcpTools.length > 0 && !lastHasImages && lastText.length <= 60 && SMALLTALK.test(lastText);
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
