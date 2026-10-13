@@ -175,9 +175,10 @@ export function useVoiceCall(opts: {
   const replyRef = useRef("");
   const aliveRef = useRef(true);
   // Recognition health: last time ANY result arrived, consecutive errors,
-  // and the latest interim text (submitted on speech end if no final comes).
+  // consecutive start() failures, and the latest interim text.
   const lastResultAtRef = useRef(0);
   const recErrCountRef = useRef(0);
+  const startFailCountRef = useRef(0);
   const pendingInterimRef = useRef("");
   const watchdogHintShownRef = useRef(false);
   const cbRef = useRef(opts.onExchange);
@@ -238,6 +239,7 @@ export function useVoiceCall(opts: {
     rec.interimResults = true;
     rec.lang = micLangFor(langRef.current);
     rec.onresult = (e: unknown) => {
+      startFailCountRef.current = 0;
       const ev = e as { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0?: { transcript: string } }> };
       let interim = "";
       let finalText = "";
@@ -265,6 +267,7 @@ export function useVoiceCall(opts: {
         fail("Microphone blocked. Allow mic access in the browser, then start the call again.");
         return;
       }
+      if (err && err !== "no-speech" && err !== "aborted" && err !== "network") startFailCountRef.current = 0;
       // 'no-speech' / 'aborted' / 'network' blips: count them; sustained
       // failure means the speech service is unreachable — say so plainly.
       recErrCountRef.current += 1;
@@ -302,7 +305,27 @@ export function useVoiceCall(opts: {
     try {
       rec.start();
     } catch {
+      // start() can throw InvalidStateError if a previous engine instance is
+      // still winding down (e.g. composer dictation just stopped). Retry with
+      // backoff instead of dying silently; fail loudly if it never recovers.
       recRef.current = null;
+      startFailCountRef.current += 1;
+      if (startFailCountRef.current >= 4) {
+        fail("Speech engine failed to start. Close the call, wait a moment, and try again.");
+        return;
+      }
+      const attempt = startFailCountRef.current;
+      setTimeout(() => {
+        if (!aliveRef.current) return;
+        const s = stateRef.current;
+        if ((s === "listening" || s === "speaking") && !mutedRef.current && recRef.current === null) {
+          try {
+            startRecognition();
+          } catch {
+            // ignore — counter + watchdog handle it
+          }
+        }
+      }, 700 * attempt);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -474,6 +497,7 @@ export function useVoiceCall(opts: {
     setTtsHint(null);
     lastResultAtRef.current = Date.now();
     recErrCountRef.current = 0;
+    startFailCountRef.current = 0;
     pendingInterimRef.current = "";
     watchdogHintShownRef.current = false;
     try {
