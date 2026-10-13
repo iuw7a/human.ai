@@ -18,6 +18,9 @@ export function AccountActions({ email }: { email: string }) {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [wipeOpen, setWipeOpen] = useState(false);
+  const [wipeBusy, setWipeBusy] = useState(false);
+  const [wipeError, setWipeError] = useState<string | null>(null);
 
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -36,6 +39,25 @@ export function AccountActions({ email }: { email: string }) {
     await supabase.auth.signOut();
     router.push("/");
     router.refresh();
+  }
+
+  async function deleteAllChats() {
+    setWipeBusy(true);
+    setWipeError(null);
+    try {
+      const res = await fetch("/api/chats", { method: "DELETE" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        throw new Error(j?.error ?? "Could not delete chats.");
+      }
+      setWipeOpen(false);
+      router.push("/");
+      router.refresh();
+    } catch (e) {
+      setWipeError(e instanceof Error ? e.message : "Could not delete chats.");
+    } finally {
+      setWipeBusy(false);
+    }
   }
 
   async function deleteAccount() {
@@ -114,6 +136,22 @@ export function AccountActions({ email }: { email: string }) {
         </form>
       </section>
 
+      <section className="card p-6">
+        <h2 className="text-[15px] font-semibold text-white">Chat history</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Delete all your conversations at once — chats, bot chats and uploads.
+        </p>
+        <button
+          onClick={() => {
+            setWipeError(null);
+            setWipeOpen(true);
+          }}
+          className="btn-ghost mt-3 border border-ink-700"
+        >
+          Delete all chats…
+        </button>
+      </section>
+
       <section className="card border-accent/30 p-6">
         <h2 className="text-[15px] font-semibold text-white">Delete account</h2>
         <p className="mt-1 text-sm text-zinc-500">
@@ -129,6 +167,40 @@ export function AccountActions({ email }: { email: string }) {
       </section>
 
       {status && <p className="text-[13px] text-zinc-300">{status}</p>}
+
+      {wipeOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Delete all chats">
+          <div className="absolute inset-0 bg-black/70" onClick={() => !wipeBusy && setWipeOpen(false)} />
+          <div className="relative w-full max-w-sm rounded-[22px] border border-white/10 bg-[#141417] p-6 shadow-2xl shadow-black/60 animate-menu-in">
+            <h3 className="text-base font-semibold text-white">Delete all chats?</h3>
+            <p className="mt-2 text-sm leading-6 text-zinc-400">
+              This permanently removes every conversation, bot chat and upload
+              on your account. This cannot be undone.
+            </p>
+            {wipeError && (
+              <p className="mt-3 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-[13px] text-red-200">
+                {wipeError}
+              </p>
+            )}
+            <div className="mt-5 flex gap-2">
+              <button
+                onClick={() => setWipeOpen(false)}
+                disabled={wipeBusy}
+                className="btn-ghost flex-1 border border-ink-700 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void deleteAllChats()}
+                disabled={wipeBusy}
+                className="flex-1 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+              >
+                {wipeBusy ? "Deleting…" : "Delete everything"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

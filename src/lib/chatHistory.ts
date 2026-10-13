@@ -55,11 +55,12 @@ export async function resolveChatModel(
   fallback: string
 ): Promise<string> {
   const supabase = createServerSupabase();
+  // maybeSingle: a missing/deleted row must render an empty chat, never crash the page.
   const { data } = await supabase
     .from("chats")
     .select("model_id")
     .eq("id", chatId)
     .eq("user_id", userId)
-    .single();
+    .maybeSingle();
   return data?.model_id ?? fallback;
 }

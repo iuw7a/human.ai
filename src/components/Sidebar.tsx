@@ -7,12 +7,6 @@ import {
   MessageSquarePlus,
   MessagesSquare,
   Heart,
-  Puzzle,
-  LibraryBig,
-  Plug,
-  Crown,
-  Bot,
-  Sparkles,
   User,
   Settings,
   Brain,
@@ -40,16 +34,8 @@ interface ChatItem {
   updated_at: string;
 }
 
-/** Workspace-only navigation. Account-level pages live in the user menu. */
-const NAV = [
-  { href: "/humi", label: "Humi", icon: Heart },
-  { href: "/rema", label: "Rema", icon: Sparkles },
-  { href: "/agent", label: "Agent", icon: Bot },
-  { href: "/plugins", label: "Plugins", icon: Puzzle },
-  { href: "/library", label: "Library", icon: LibraryBig },
-  { href: "/mcp", label: "MCP Servers", icon: Plug },
-  { href: "/chess", label: "Chess", icon: Crown },
-];
+/** Core navigation lives here; tools and explorables moved to /platform. */
+const NAV = [{ href: "/humi", label: "Humi", icon: Heart }];
 
 const USER_MENU = [
   { href: "/account", label: "Account", icon: Settings },

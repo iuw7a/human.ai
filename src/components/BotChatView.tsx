@@ -53,6 +53,19 @@ export function BotChatView({
   const [mcpUsed, setMcpUsed] = useState<{ server: string; tool: string }[]>([]);
   const [bgOk, setBgOk] = useState(false);
   const sendingRef = useRef(false);
+  // Aborts the in-flight chat stream when leaving the page mid-answer.
+  const streamAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const ref = streamAbortRef;
+    return () => {
+      try {
+        ref.current?.abort();
+      } catch {
+        // ignore
+      }
+      ref.current = null;
+    };
+  }, []);
   const [voiceText, setVoiceText] = useState("");
   const voice = useVoice({ onTranscript: (t) => setVoiceText((prev) => (prev ? `${prev} ${t}` : t)) });
   const [completedFlash, setCompletedFlash] = useState(false);
@@ -141,6 +154,8 @@ export function BotChatView({
   async function send(text: string, pendingImages: PendingImage[]) {
     if (sendingRef.current) return;
     sendingRef.current = true;
+    const ctrl = new AbortController();
+    streamAbortRef.current = ctrl;
     setSending(true);
     setStreamed("");
     setError(null);
@@ -169,6 +184,7 @@ export function BotChatView({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversation_id: conversationId, messages: apiMessages }),
+        signal: ctrl.signal,
       });
       if (!res.ok || !res.body) {
         const errJson = await res.json().catch(() => null);
@@ -213,9 +229,14 @@ export function BotChatView({
       setStreamed("");
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
-      setStreamed("");
+      if (e instanceof Error && e.name === "AbortError") {
+        setStreamed("");
+      } else {
+        setError(e instanceof Error ? e.message : "Something went wrong.");
+        setStreamed("");
+      }
     } finally {
+      if (streamAbortRef.current === ctrl) streamAbortRef.current = null;
       sendingRef.current = false;
       setSending(false);
     }

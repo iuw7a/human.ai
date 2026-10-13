@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageSquarePlus, Image, History, Brain, ShieldCheck, Zap } from "lucide-react";
+import { MessageSquarePlus, Image, History, Brain, ShieldCheck, Zap, Bot, Crown, Plug, LibraryBig, Puzzle, Heart, Sparkles } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { listModels } from "@/lib/models";
 
@@ -63,6 +63,25 @@ export default function PlatformPage() {
               <h2 className="mt-3 text-[15px] font-semibold text-white">{f.title}</h2>
               <p className="mt-1 text-sm leading-6 text-zinc-400">{f.text}</p>
             </div>
+          ))}
+        </div>
+
+        <h2 className="mt-10 text-lg font-semibold text-white">Explore</h2>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {[
+            { icon: Bot, title: "Agent", text: "Let the browser agent research and do tasks for you.", href: "/?mode=agent" },
+            { icon: Crown, title: "Chess", text: "Play chess against Human AI.", href: "/chess" },
+            { icon: Plug, title: "MCP Servers", text: "Connect tools, docs and services.", href: "/mcp" },
+            { icon: LibraryBig, title: "Library", text: "Browse saved items and collections.", href: "/library" },
+            { icon: Puzzle, title: "Plugins", text: "Extend Human AI with plugins.", href: "/plugins" },
+            { icon: Heart, title: "My Bots", text: "Your personal companion Humi.", href: "/humi" },
+            { icon: Sparkles, title: "Bot", text: "Meet Rema, the second companion.", href: "/rema" },
+          ].map((c) => (
+            <Link key={c.title} href={c.href} className="card p-5 transition-colors hover:border-white/[0.18]">
+              <c.icon size={18} className="text-accent" />
+              <h3 className="mt-3 text-[15px] font-semibold text-white">{c.title}</h3>
+              <p className="mt-1 text-sm leading-6 text-zinc-400">{c.text}</p>
+            </Link>
           ))}
         </div>
 

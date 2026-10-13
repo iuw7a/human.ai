@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Globe, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
+import { Check, Globe, Home, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
 import type { PendingImage } from "./ChatInput";
 import { createClient } from "@/lib/supabase/client";
 import { getModel } from "@/lib/models";
@@ -32,6 +32,16 @@ export interface StoredMessage {
 function CompanionSwitcher() {
   return (
     <div className="mb-2 flex items-center justify-end gap-2">
+      <a
+        href="/"
+        title="Home"
+        className="group flex items-center gap-2 rounded-full border border-white/[0.09] bg-white/[0.03] py-1 pl-1 pr-3 transition-colors hover:border-white/20 hover:bg-white/[0.06]"
+      >
+        <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-ink-800">
+          <Home size={14} className="text-zinc-300" />
+        </span>
+        <span className="text-xs font-medium text-zinc-300 group-hover:text-white">Home</span>
+      </a>
       <a
         href="/humi"
         title="Chat with Humi"
@@ -358,6 +368,19 @@ export function ChatView({
   const [activity, setActivity] = useState<ModeActivity | null>(null);
   const sendingRef = useRef(false);
   const stopRef = useRef(false);
+  // Aborts the in-flight chat stream when leaving the page mid-answer.
+  const streamAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const ref = streamAbortRef;
+    return () => {
+      try {
+        ref.current?.abort();
+      } catch {
+        // ignore
+      }
+      ref.current = null;
+    };
+  }, []);
   const approvalResolveRef = useRef<((approved: boolean) => void) | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const runKindRef = useRef<"agent" | "computer" | null>(null);
@@ -577,6 +600,8 @@ export function ChatView({
     }
     const m = modeOverride ?? modeRef.current;
     sendingRef.current = true;
+    const ctrl = new AbortController();
+    streamAbortRef.current = ctrl;
     setSending(true);
     setStreamed("");
     setError(null);
@@ -590,9 +615,11 @@ export function ChatView({
       } else if (m === "computer-use") {
         await runComputerTask(history, text, uploaded.length);
       } else {
-        await runChatReply(history);
+        await runChatReply(history, ctrl.signal);
       }
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      if (e instanceof Error && e.name === "AbortError") return;
       const msg = e instanceof Error ? e.message : "Something went wrong.";
       const kind = runKindRef.current;
       if (kind === "computer") {
@@ -614,13 +641,14 @@ export function ChatView({
       }
       setStreamed("");
     } finally {
+      if (streamAbortRef.current === ctrl) streamAbortRef.current = null;
       sendingRef.current = false;
       setSending(false);
     }
   }
 
   /** Normal chat reply: existing streaming behavior, unchanged. */
-  async function runChatReply(history: StoredMessage[]) {
+  async function runChatReply(history: StoredMessage[], signal?: AbortSignal) {
     const apiMessages = history.map((m) => ({
       role: m.role,
       content: m.content,
@@ -633,6 +661,7 @@ export function ChatView({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ modelId: modelIdRef.current, messages: apiMessages }),
+      signal,
     });
     if (!res.ok || !res.body) {
       const errJson = await res.json().catch(() => null);
