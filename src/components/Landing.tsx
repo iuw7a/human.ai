@@ -43,6 +43,12 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
   const [initialGoal] = useState(() => goalFromUrl());
   const [voiceText, setVoiceText] = useState("");
   const voice = useVoice({ onTranscript: (t) => setVoiceText((prev) => (prev ? `${prev} ${t}` : t)) });
+  const [callMicOk] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      (("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window)) &&
+      !!navigator.mediaDevices?.getUserMedia
+  );
 
   useEffect(() => {
     setMode(modeFromUrl());
@@ -77,6 +83,11 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
     }
     setSending(true);
     router.push(`/chat/${chatId}`);
+  }
+
+  function handleCall() {
+    // Voice calls run in chat mode: mint the thread, then open it with ?call=1.
+    router.push(`/chat/${newChatId()}?call=1`);
   }
 
   return (
@@ -124,6 +135,8 @@ export default function LandingInner({ user }: { user: SupabaseUser | null }) {
                 supported: voice.sttSupported,
                 onMic: () => (voice.listening ? voice.stopListening() : voice.startListening()),
               }}
+              onCall={mode === "chat" ? handleCall : undefined}
+              callSupported={callMicOk}
               placeholder={
                 mode === "agent"
                   ? "Describe the task, e.g. Research this company…"
