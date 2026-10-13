@@ -57,6 +57,7 @@ type Rec = {
   onresult: ((e: unknown) => void) | null;
   onerror: ((e: unknown) => void) | null;
   onend: (() => void) | null;
+  onspeechend: ((e: unknown) => void) | null;
 };
 
 function getRecognizer(): (new () => Rec) | null {
@@ -173,6 +174,12 @@ export function useVoiceCall(opts: {
   const ttsStartedAtRef = useRef(0);
   const replyRef = useRef("");
   const aliveRef = useRef(true);
+  // Recognition health: last time ANY result arrived, consecutive errors,
+  // and the latest interim text (submitted on speech end if no final comes).
+  const lastResultAtRef = useRef(0);
+  const recErrCountRef = useRef(0);
+  const pendingInterimRef = useRef("");
+  const watchdogHintShownRef = useRef(false);
   const cbRef = useRef(opts.onExchange);
   cbRef.current = opts.onExchange;
   const endedCbRef = useRef(opts.onEnded);
@@ -241,8 +248,16 @@ export function useVoiceCall(opts: {
         if (r.isFinal) finalText += t;
         else interim += t;
       }
-      if (interim) setCaptionUser(interim);
-      if (finalText.trim()) void handleFinal(finalText);
+      lastResultAtRef.current = Date.now();
+      recErrCountRef.current = 0;
+      if (interim) {
+        pendingInterimRef.current = interim;
+        setCaptionUser(interim);
+      }
+      if (finalText.trim()) {
+        pendingInterimRef.current = "";
+        void handleFinal(finalText);
+      }
     };
     rec.onerror = (e: unknown) => {
       const err = (e as { error?: string })?.error ?? "";
@@ -250,8 +265,26 @@ export function useVoiceCall(opts: {
         fail("Microphone blocked. Allow mic access in the browser, then start the call again.");
         return;
       }
-      // 'no-speech' / 'aborted' / network blips: the loop restarts via onend.
+      // 'no-speech' / 'aborted' / 'network' blips: count them; sustained
+      // failure means the speech service is unreachable — say so plainly.
+      recErrCountRef.current += 1;
+      if (recErrCountRef.current >= 5) {
+        recErrCountRef.current = 0;
+        fail("Speech service unreachable (network?). Check your connection, then start a new call.");
+        return;
+      }
+      // the loop restarts via onend.
     };
+    try {
+      rec.onspeechend = () => {
+        // Fallback: some engines emit interim only — submit it as the turn.
+        const pending = pendingInterimRef.current.trim();
+        pendingInterimRef.current = "";
+        if (pending) void handleFinal(pending);
+      };
+    } catch {
+      // onspeechend unsupported — finals still work
+    }
     rec.onend = () => {
       recRef.current = null;
       if (!aliveRef.current) return;
@@ -407,6 +440,29 @@ export function useVoiceCall(opts: {
     };
   }, [micLevel]);
 
+  // ---- silence watchdog: recognition alive but hears nothing for a while ----
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = window.setInterval(() => {
+      if (!aliveRef.current) return;
+      const s = stateRef.current;
+      if (s !== "listening" && s !== "speaking") return;
+      if (mutedRef.current) return;
+      if (Date.now() - lastResultAtRef.current < 25000) return;
+      // Nudge the recognizer; if it was stalled this restarts it.
+      try {
+        recRef.current?.abort();
+      } catch {
+        // ignore
+      }
+      if (!watchdogHintShownRef.current) {
+        watchdogHintShownRef.current = true;
+        setTtsHint("Still listening — speak up, and check the mic hears you (Windows mic permission + input device).");
+      }
+    }, 8000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const start = useCallback(async () => {
     if (!aliveRef.current) return;
     if (!supported()) {
@@ -416,6 +472,10 @@ export function useVoiceCall(opts: {
     go("requesting");
     setError(null);
     setTtsHint(null);
+    lastResultAtRef.current = Date.now();
+    recErrCountRef.current = 0;
+    pendingInterimRef.current = "";
+    watchdogHintShownRef.current = false;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
