@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getAdmin } from "@/lib/admin";
 import { agnesCreateAndWaitVideo, agnesGetVideo } from "@/lib/agnes";
+import { HF_DEFAULT_VIDEO_MODEL, hfTextToVideo } from "@/lib/hfvideo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,16 +25,25 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/admin/tools/videos {prompt, seconds?, size?, aspect_ratio?} — create + wait (admin-only). */
+/** POST /api/admin/tools/videos {prompt, backend?, seconds?, size?, aspect_ratio?, hfModel?}.
+ *  backend "agnes" (default): async task, waits then returns JSON (or pending + videoId).
+ *  backend "hf": Hugging Face Inference Providers, returns raw video/mp4 bytes. */
 export async function POST(req: NextRequest) {
   const adminUser = await getAdmin();
   if (!adminUser) return Response.json({ error: "Forbidden." }, { status: 403 });
   try {
     const b = (await req.json().catch(() => null)) as {
-      prompt?: unknown; seconds?: unknown; size?: unknown; aspect_ratio?: unknown;
+      prompt?: unknown; backend?: unknown; seconds?: unknown; size?: unknown; aspect_ratio?: unknown; hfModel?: unknown;
     } | null;
     const prompt = typeof b?.prompt === "string" ? b.prompt : "";
     if (!prompt.trim()) return Response.json({ error: "A prompt is required." }, { status: 400 });
+    if (b?.backend === "hf") {
+      const hfModel = typeof b?.hfModel === "string" && b.hfModel.trim() ? b.hfModel.trim() : HF_DEFAULT_VIDEO_MODEL;
+      const mp4 = await hfTextToVideo({ prompt, providerModel: hfModel });
+      return new Response(new Uint8Array(mp4), {
+        headers: { "Content-Type": "video/mp4", "Cache-Control": "no-store", "Content-Length": String(mp4.length) },
+      });
+    }
     const seconds = typeof b?.seconds === "string" && SECONDS.includes(b.seconds) ? b.seconds : "5";
     const size = (typeof b?.size === "string" && (SIZES as readonly string[]).includes(b.size) ? b.size : "720P") as typeof SIZES[number];
     const aspect_ratio = typeof b?.aspect_ratio === "string" && RATIOS.includes(b.aspect_ratio) ? b.aspect_ratio : "16:9";

@@ -6,6 +6,8 @@ import { ArrowUp, Clapperboard, Loader2 } from "lucide-react";
 /** Admin video studio: prompt bar + async task with live progress + player. */
 export function VideoTool() {
   const [prompt, setPrompt] = useState("");
+  const [backend, setBackend] = useState<"agnes" | "hf">("agnes");
+  const [hfModel, setHfModel] = useState("fal-ai/fal-ai/hunyuan-video");
   const [seconds, setSeconds] = useState("5");
   const [size, setSize] = useState("720P");
   const [ratio, setRatio] = useState("16:9");
@@ -63,10 +65,23 @@ export function VideoTool() {
       const res = await fetch("/api/admin/tools/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: p, seconds, size, aspect_ratio: ratio }),
+        body: JSON.stringify({ prompt: p, backend, seconds, size, aspect_ratio: ratio, hfModel }),
       });
+      const ct = res.headers.get("content-type") ?? "";
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        throw new Error(j?.error ?? "Generation failed.");
+      }
+      if (ct.includes("video/")) {
+        const blob = await res.blob();
+        if (!blob.size) throw new Error("Video provider returned no video.");
+        setVideoUrl(URL.createObjectURL(blob));
+        setStatus("completed");
+        setProgress(100);
+        setBusy(false);
+        return;
+      }
       const j = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(j?.error ?? "Generation failed.");
       if (j.url) {
         setVideoUrl(j.url);
         setStatus("completed");
@@ -74,7 +89,8 @@ export function VideoTool() {
         setBusy(false);
         return;
       }
-      // Still rendering — keep polling client-side.
+      // Still rendering (Agnes) — keep polling client-side.
+      if (!j.video_id) throw new Error("Video provider returned nothing usable.");
       setVideoId(j.video_id);
       setStatus(j.status ?? "in_progress");
       setProgress(j.progress ?? 0);
@@ -125,21 +141,37 @@ export function VideoTool() {
           className="max-h-[200px] w-full resize-none bg-transparent px-2 py-1 text-[15px] leading-6 text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
         />
         <div className="mt-1 flex flex-wrap items-center gap-2 px-1">
-          <select value={seconds} onChange={(e) => setSeconds(e.target.value)} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Duration">
-            {["4", "5", "6", "8", "12"].map((s) => (
-              <option key={s} value={s} className="bg-ink-900">{s}s</option>
-            ))}
+          <select value={backend} onChange={(e) => setBackend(e.target.value as "agnes" | "hf")} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Backend">
+            <option value="agnes" className="bg-ink-900">Agnes</option>
+            <option value="hf" className="bg-ink-900">HuggingFace</option>
           </select>
-          <select value={size} onChange={(e) => setSize(e.target.value)} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Resolution">
-            {["720P", "1080P", "1K", "2K"].map((s) => (
-              <option key={s} value={s} className="bg-ink-900">{s}</option>
-            ))}
-          </select>
-          <select value={ratio} onChange={(e) => setRatio(e.target.value)} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Aspect ratio">
-            {["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"].map((s) => (
-              <option key={s} value={s} className="bg-ink-900">{s}</option>
-            ))}
-          </select>
+          {backend === "hf" ? (
+            <input
+              value={hfModel}
+              onChange={(e) => setHfModel(e.target.value)}
+              placeholder="fal-ai/fal-ai/hunyuan-video"
+              className="min-w-0 flex-1 rounded-xl border border-white/10 bg-transparent px-2 py-1.5 font-mono text-xs text-zinc-300 placeholder:text-zinc-600 focus:outline-none"
+              title="HF provider model path"
+            />
+          ) : (
+            <>
+              <select value={seconds} onChange={(e) => setSeconds(e.target.value)} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Duration">
+                {["4", "5", "6", "8", "12"].map((s) => (
+                  <option key={s} value={s} className="bg-ink-900">{s}s</option>
+                ))}
+              </select>
+              <select value={size} onChange={(e) => setSize(e.target.value)} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Resolution">
+                {["720P", "1080P", "1K", "2K"].map((s) => (
+                  <option key={s} value={s} className="bg-ink-900">{s}</option>
+                ))}
+              </select>
+              <select value={ratio} onChange={(e) => setRatio(e.target.value)} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Aspect ratio">
+                {["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"].map((s) => (
+                  <option key={s} value={s} className="bg-ink-900">{s}</option>
+                ))}
+              </select>
+            </>
+          )}
           <div className="flex-1" />
           <button
             onClick={() => void submit()}
@@ -152,7 +184,11 @@ export function VideoTool() {
         </div>
       </div>
       <p className="mt-2 text-center text-xs text-zinc-500">
-        {busy ? "Rendering with Agnes Video 2.5 (minutes possible)…" : "agnes-video-2.5 · async task API · key stays server-side"}
+        {busy
+          ? backend === "hf"
+            ? "Rendering with Hugging Face (minutes possible)…"
+            : "Rendering with Agnes Video 2.5 (minutes possible)…"
+          : "Agnes async task API or HF Inference Providers · keys stay server-side"}
       </p>
     </div>
   );
