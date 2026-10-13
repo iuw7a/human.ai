@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useRef } from "react";
-import { Mic, MicOff, PhoneOff, Volume2, VolumeX } from "lucide-react";
+import { Mic, MicOff, PhoneOff, Send, Volume2, VolumeX } from "lucide-react";
 import { useVoiceCall, type CallTransport, type CallExchange, type Turn } from "./useVoiceCall";
 
 /**
@@ -161,6 +161,15 @@ export function CallInterface({
               }`}
             >
               {call.muted ? <MicOff size={19} /> : <Mic size={19} />}
+            </button>
+            <button
+              onClick={() => call.sendNow()}
+              disabled={!call.captionUser.trim() || (call.state !== "listening" && call.state !== "speaking")}
+              aria-label="Send recognized text now"
+              title="Send what was heard so far"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/[0.07] text-white transition-colors hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Send size={19} />
             </button>
             <button
               onClick={call.toggleSpeaker}

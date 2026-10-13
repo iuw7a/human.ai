@@ -155,6 +155,11 @@ export function useVoiceCall(opts: {
   const [error, setError] = useState<string | null>(null);
   const [captionUser, setCaptionUser] = useState("");
   const [captionAssistant, setCaptionAssistant] = useState("");
+  const captionUserRef = useRef("");
+  const setUserCaption = useCallback((t: string) => {
+    captionUserRef.current = t;
+    setCaptionUser(t);
+  }, []);
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
   const [ttsHint, setTtsHint] = useState<string | null>(null);
@@ -254,7 +259,7 @@ export function useVoiceCall(opts: {
       recErrCountRef.current = 0;
       if (interim) {
         pendingInterimRef.current = interim;
-        setCaptionUser(interim);
+        setUserCaption(interim);
       }
       if (finalText.trim()) {
         pendingInterimRef.current = "";
@@ -344,7 +349,7 @@ export function useVoiceCall(opts: {
     // Ignore the AI hearing itself (speaker echo).
     if (isEcho(clean, replyRef.current)) return;
     stopRecognition();
-    setCaptionUser(clean);
+    setUserCaption(clean);
     setCaptionAssistant("");
     replyRef.current = "";
     await runTurn(clean);
@@ -566,6 +571,15 @@ export function useVoiceCall(opts: {
     endedCbRef.current();
   }, [cleanupAudio, go]);
 
+  /** Manually submit the currently recognized text as a turn (Send button). */
+  const sendNow = useCallback(() => {
+    const text = (pendingInterimRef.current || captionUserRef.current).trim();
+    if (!text) return;
+    pendingInterimRef.current = "";
+    void handleFinal(text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleMute = useCallback(() => {
     const next = !mutedRef.current;
     mutedRef.current = next;
@@ -627,6 +641,7 @@ export function useVoiceCall(opts: {
     micLevel,
     start,
     end,
+    sendNow,
     toggleMute,
     toggleSpeaker,
   };
