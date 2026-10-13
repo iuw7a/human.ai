@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +53,7 @@ export default async function ApiDocsPage() {
   -H "x-api-key: YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "modelId": "human-ai",
+    "modelId": "humi1.1-speed",
     "messages": [
       { "role": "user", "content": "Hello" }
     ]
@@ -68,7 +68,7 @@ export default async function ApiDocsPage() {
         <Code label="stream tokens in the browser (key must stay server-side!)">{`const res = await fetch("https://usehuman.de/api/chat", {
   method: "POST",
   headers: { "x-api-key": process.env.HUMANAI_KEY, "Content-Type": "application/json" },
-  body: JSON.stringify({ modelId: "human-ai", messages: [{ role: "user", content: "Hello" }] }),
+  body: JSON.stringify({ modelId: "humi1.1-speed", messages: [{ role: "user", content: "Hello" }] }),
 });
 const reader = res.body.getReader();
 const decoder = new TextDecoder();
@@ -96,7 +96,7 @@ for (;;) {
 resp = requests.post(
     "https://usehuman.de/api/chat",
     headers={"x-api-key": "YOUR_KEY", "Content-Type": "application/json"},
-    json={"modelId": "human-ai", "messages": [{"role": "user", "content": "Hello"}]},
+    json={"modelId": "humi1.1-speed", "messages": [{"role": "user", "content": "Hello"}]},
     stream=True,
 )
 full = ""

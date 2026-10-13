@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { Check, Copy, KeyRound, Loader2, Plus, Trash2 } from "lucide-react";
@@ -148,7 +148,7 @@ export function ApiKeysClient() {
         <pre className="mt-3 overflow-x-auto rounded-2xl bg-black/60 p-4 font-mono text-xs leading-5 text-zinc-300">{`curl https://usehuman.de/api/chat \\
   -H "x-api-key: YOUR_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"modelId":"human-ai","messages":[{"role":"user","content":"Hello"}]}'`}</pre>
+  -d '{"modelId":"humi1.1-speed","messages":[{"role":"user","content":"Hello"}]}'`}</pre>
         <p className="mt-2 text-xs text-zinc-500">
           Streams Server-Sent Events (<code className="font-mono">data: {"{token}"}</code>). Responses follow your plan limits.
         </p>

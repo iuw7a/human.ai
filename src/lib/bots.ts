@@ -1,4 +1,4 @@
-import { createAdminSupabase, createServerSupabase } from "./supabase/server";
+﻿import { createAdminSupabase, createServerSupabase } from "./supabase/server";
 import { listDbModels, resolveDbModel } from "./admin";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
@@ -140,7 +140,7 @@ export function toBot(row: any): Bot {
     description: row.description ?? "",
     personality: row.personality ?? "",
     instructions: row.instructions ?? "",
-    model_id: row.model_id ?? "human-ai",
+    model_id: row.model_id ?? "humi1.1-speed",
     memory_enabled: row.memory_enabled !== false,
     include_user_memory: !!row.include_user_memory,
     tools: normalizeTools(row.tools),

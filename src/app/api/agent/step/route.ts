@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+﻿import { NextRequest } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { resolveDbModel, logAppError } from "@/lib/admin";
 import { getEffectiveSubscription, canAccessModel, upgradeMessage } from "@/lib/subscriptions";
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       .map((h) => `Step ${h.n}: ${h.action} → ${h.ok ? "ok" : "FAILED"}: ${h.observation}`)
       .join("\n");
 
-    const model = await resolveDbModel("human-ai");
+    const model = await resolveDbModel("humi1.1-speed");
     const providerModelId = model?.providerModelId ?? "meta/llama-3.2-11b-vision-instruct";
     // Entitlement check: fixed model still gated by server-side subscription.
     if (model) {

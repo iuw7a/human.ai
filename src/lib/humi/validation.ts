@@ -1,4 +1,4 @@
-/** Humi assistant validation (shared by API routes + client forms). No deps. */
+﻿/** Humi assistant validation (shared by API routes + client forms). No deps. */
 
 export const ASSISTANT_PERSONALITIES = ["friendly", "professional", "funny", "calm", "custom"] as const;
 export type AssistantPersonality = (typeof ASSISTANT_PERSONALITIES)[number];
@@ -101,7 +101,7 @@ export function sanitizeAssistant(
     issues.push("voice: only the verified server voice is available");
   }
 
-  const model_id = str(raw.model_id, 80) || "human-ai";
+  const model_id = str(raw.model_id, 80) || "humi1.1-speed";
 
   if (issues.length > 0) return { ok: false, reason: "invalid", issues };
 

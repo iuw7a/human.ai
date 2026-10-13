@@ -16,10 +16,21 @@ export interface ModelConfig {
 
 export const models: Record<string, ModelConfig> = {
   // Public slug — neutral, no provider/model internals leak into URLs or UI.
+  "humi1.1-speed": {
+    id: "humi1.1-speed",
+    provider: "nvidia",
+    name: "humi1.1-speed",
+    description: "The Human AI flagship model — fast, precise, understands images.",
+    providerModelId: "meta/llama-3.2-11b-vision-instruct",
+    vision: true,
+    streaming: true,
+    maxImageSizeMB: 8,
+  },
+  // Legacy slugs (existing chats/URLs keep working; same neutral display name).
   "human-ai": {
     id: "human-ai",
     provider: "nvidia",
-    name: "Human AI",
+    name: "humi1.1-speed",
     description: "The Human AI flagship model — fast, precise, understands images.",
     providerModelId: "meta/llama-3.2-11b-vision-instruct",
     vision: true,
@@ -70,7 +81,7 @@ export const models: Record<string, ModelConfig> = {
   },
 };
 
-export const DEFAULT_MODEL_ID = "human-ai";
+export const DEFAULT_MODEL_ID = "humi1.1-speed";
 
 export function getModel(modelId: string): ModelConfig | null {
   return models[modelId] ?? null;

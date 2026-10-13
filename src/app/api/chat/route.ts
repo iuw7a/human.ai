@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+﻿import { NextRequest } from "next/server";
 import { getModel } from "@/lib/models";
 import { HUMAN_AI_SYSTEM_PROMPT } from "@/lib/systemPrompt";
 import { createProviderFor, streamChatWithToolsFor } from "@/lib/providers/registry";
@@ -69,7 +69,7 @@ function sanitize(messages: BodyMessage[]): ChatMessageInput[] {  return message
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as { modelId?: string; messages?: BodyMessage[] };
-    const requestedSlug = body.modelId ?? "human-ai";
+    const requestedSlug = body.modelId ?? "humi1.1-speed";
     // DB-backed model resolution (falls back to code registry).
     const dbModel = await resolveDbModel(requestedSlug);
     const codeModel = getModel(requestedSlug);

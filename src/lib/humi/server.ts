@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+﻿import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** SERVER ONLY. Humi data access with explicit owner scoping (RLS + user_id filters). */
 
@@ -39,7 +39,7 @@ export async function getOwnAssistant(
     language: String(r.language ?? "auto"),
     voice: String(r.voice ?? "server"),
     voice_enabled: r.voice_enabled !== false,
-    model_id: String(r.model_id ?? "human-ai"),
+    model_id: String(r.model_id ?? "humi1.1-speed"),
   };
 }
 
