@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowUp, ImagePlus, Loader2, Mic, MicOff, X } from "lucide-react";
+import { ArrowUp, ImagePlus, Loader2, Mic, MicOff, Phone, X } from "lucide-react";
 import { ModeSelector, type ChatMode } from "../ModeSelector";
 import { PowerSelector } from "../PowerSelector";
 import type { PendingImage } from "../ChatInput";
@@ -64,6 +64,8 @@ export const Composer = memo(function Composer({
   onVoiceTextConsumed,
   voice,
   statusLine,
+  onCall,
+  callSupported,
 }: {
   onSend: (text: string, images: PendingImage[]) => void;
   sending: boolean;
@@ -82,6 +84,9 @@ export const Composer = memo(function Composer({
     onMic: () => void;
   };
   statusLine?: string;
+  /** When provided, a Call button opens the live voice-call overlay. */
+  onCall?: () => void;
+  callSupported?: boolean;
 }) {
   const [text, setText] = useState(initialText);
   const [images, setImages] = useState<PendingImage[]>([]);
@@ -233,6 +238,16 @@ export const Composer = memo(function Composer({
               disabled={!voice.supported}
             >
               {voice.listening ? <MicOff size={18} /> : <Mic size={18} />}
+            </ToolButton>
+          )}
+          {onCall && (
+            <ToolButton
+              onClick={onCall}
+              label="Voice call"
+              title={callSupported === false ? "Voice calls need Chrome or Edge with a microphone" : "Start a live voice call"}
+              disabled={callSupported === false}
+            >
+              <Phone size={18} />
             </ToolButton>
           )}
           <div className="flex-1" />

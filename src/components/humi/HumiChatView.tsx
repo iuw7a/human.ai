@@ -11,7 +11,8 @@ import { UserMessage, AssistantMessage, ThinkingRow, type SpeakState } from "@/c
 import type { PendingImage } from "@/components/ChatInput";
 import { useHumiMic } from "./useHumiMic";
 import { CallInterface } from "./CallInterface";
-import type { CallExchange } from "./useVoiceCall";
+import type { CallExchange, CallTransport } from "./useVoiceCall";
+import { readChatStream } from "./useVoiceCall";
 import {
   playHumiTts,
   stopHumiAudio,
@@ -352,6 +353,38 @@ export function HumiChatView({
     []
   );
 
+  const callTransport: CallTransport = useMemo(
+    () => ({
+      startSession: async () => {
+        const res = await fetch("/api/humi/voice-call", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assistantId: assistant.id }),
+        });
+        const j = (await res.json().catch(() => null)) as { chat?: { id: string }; error?: string } | null;
+        if (!res.ok || !j?.chat) throw new Error(j?.error ?? "Could not start a voice session.");
+        return j.chat.id;
+      },
+      streamReply: async (chatId, history, onToken, signal) => {
+        void chatId;
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            modelId: assistant.model_id,
+            messages: history.slice(-30).map((m) => ({ role: m.role, content: m.content })),
+            assistantName: assistant.name,
+            personality: assistant.personality,
+            customInstructions: `${assistant.custom_instructions}\nKeep spoken replies short (1-3 sentences). Plain text only: no markdown, no lists, no code blocks.`,
+          }),
+          signal,
+        });
+        return readChatStream(res, onToken);
+      },
+    }),
+    [assistant.id, assistant.model_id, assistant.name, assistant.personality, assistant.custom_instructions]
+  );
+
   async function renameChat(id: string) {
     const title = editTitle.trim().slice(0, 80);
     setEditingId(null);
@@ -543,15 +576,10 @@ export function HumiChatView({
       </div>
       {callOpen && (
         <CallInterface
-          assistant={{
-            id: assistant.id,
-            name: assistant.name,
-            model_id: assistant.model_id,
-            personality: assistant.personality,
-            custom_instructions: assistant.custom_instructions,
-            language: assistant.language,
-          }}
+          title={assistant.name}
           avatarSrc={avatarSrc}
+          transport={callTransport}
+          language={assistant.language}
           initialHistory={messages.slice(-30).map((m) => ({ role: m.role, content: m.content }))}
           onExchange={handleCallExchange}
           onClose={() => setCallOpen(false)}

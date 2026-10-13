@@ -19,24 +19,32 @@ export type CallState =
   | "error"
   | "ended";
 
-export interface CallAssistant {
-  id: string;
-  name: string;
-  model_id: string;
-  personality: string;
-  custom_instructions: string;
-  language: string;
+export interface Turn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/**
+ * Backend transport for a voice call. Each host view (Humi chat, bot chat)
+ * plugs in its own session bootstrap + reply streaming; the loop, audio,
+ * barge-in and states stay shared.
+ */
+export interface CallTransport {
+  /** Resolve the conversation id to chat in (may create one). */
+  startSession: () => Promise<string>;
+  /** Stream one assistant reply for the given history; resolves with full text. */
+  streamReply: (
+    chatId: string,
+    history: Turn[],
+    onToken: (token: string) => void,
+    signal: AbortSignal
+  ) => Promise<string>;
 }
 
 export interface CallExchange {
   chatId: string;
   userText: string;
   assistantText: string;
-}
-
-interface Turn {
-  role: "user" | "assistant";
-  content: string;
 }
 
 type Rec = {
@@ -70,7 +78,7 @@ function norm(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9äöüß\u0600-\u06FF ]/gi, " ").replace(/\s+/g, " ").trim();
 }
 
-// Drop transcripts that are just Humi hearing its own voice (echo):
+// Drop transcripts that are just the AI hearing its own voice (echo):
 // if either normalized text contains the other, or word overlap is high.
 function isEcho(transcript: string, spoken: string): boolean {
   const a = norm(transcript);
@@ -85,18 +93,59 @@ function isEcho(transcript: string, spoken: string): boolean {
   return hit / Math.max(1, bw.length) > 0.6;
 }
 
+/** Read an OpenAI-style SSE chat stream ({token}|{error}|[DONE]) into full text. */
+export async function readChatStream(
+  res: Response,
+  onToken: (token: string) => void
+): Promise<string> {
+  if (!res.ok || !res.body) {
+    const errJson = await res.json().catch(() => null);
+    throw new Error(errJson?.error ?? `Request failed (${res.status}).`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = "";
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith("data:")) continue;
+      const data = t.slice(5).trim();
+      if (data === "[DONE]") continue;
+      try {
+        const json = JSON.parse(data) as { token?: string; error?: string };
+        if (json.error) throw new Error(json.error);
+        if (json.token) {
+          full += json.token;
+          onToken(json.token);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message !== "Unexpected end of JSON input") throw e;
+      }
+    }
+  }
+  return full;
+}
+
 const VAD_THRESHOLD = 0.03;
 const VAD_FRAMES = 3;
 const BARGE_IN_GRACE_MS = 900;
 
 /**
- * Continuous voice-call loop for Humi.
- * Browser mic (SpeechRecognition + WebAudio level meter) -> /api/chat SSE
- * -> server TTS (/api/tts) playback. Barge-in cuts playback via mic energy.
- * No mocks: every state reflects a real operation; failures surface as messages.
+ * Continuous voice-call loop.
+ * Browser mic (SpeechRecognition + WebAudio level meter) -> transport
+ * stream -> server TTS (/api/tts) playback. Barge-in cuts playback via
+ * mic energy. No mocks: every state reflects a real operation.
  */
 export function useVoiceCall(opts: {
-  assistant: CallAssistant;
+  transport: CallTransport;
+  /** Base language ("" = auto from text/navigator). */
+  language: string;
   initialHistory: Turn[];
   onExchange: (ex: CallExchange) => void;
   onEnded: () => void;
@@ -128,8 +177,10 @@ export function useVoiceCall(opts: {
   cbRef.current = opts.onExchange;
   const endedCbRef = useRef(opts.onEnded);
   endedCbRef.current = opts.onEnded;
-  const asstRef = useRef(opts.assistant);
-  asstRef.current = opts.assistant;
+  const transportRef = useRef(opts.transport);
+  transportRef.current = opts.transport;
+  const langRef = useRef(opts.language);
+  langRef.current = opts.language;
 
   const go = useCallback((s: CallState) => {
     stateRef.current = s;
@@ -178,7 +229,7 @@ export function useVoiceCall(opts: {
     const rec = new Ctor();
     rec.continuous = false;
     rec.interimResults = true;
-    rec.lang = micLangFor(asstRef.current.language);
+    rec.lang = micLangFor(langRef.current);
     rec.onresult = (e: unknown) => {
       const ev = e as { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0?: { transcript: string } }> };
       let interim = "";
@@ -228,13 +279,13 @@ export function useVoiceCall(opts: {
     if (!clean || !aliveRef.current) return;
     const s = stateRef.current;
     if (s !== "listening" && s !== "speaking") return;
-    // Barge-in: user talked over Humi — cut playback immediately.
+    // Barge-in: user talked over the AI — cut playback immediately.
     if (s === "speaking") {
       stopHumiAudio();
       streamAbortRef.current?.abort();
       streamAbortRef.current = null;
     }
-    // Ignore Humi hearing itself (speaker echo).
+    // Ignore the AI hearing itself (speaker echo).
     if (isEcho(clean, replyRef.current)) return;
     stopRecognition();
     setCaptionUser(clean);
@@ -244,7 +295,6 @@ export function useVoiceCall(opts: {
   }
 
   async function runTurn(userText: string) {
-    const asst = asstRef.current;
     go("processing");
     setTtsHint(null);
     const history = [...historyRef.current, { role: "user", content: userText } as Turn];
@@ -252,48 +302,12 @@ export function useVoiceCall(opts: {
     streamAbortRef.current = ctrl;
     let full = "";
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          modelId: asst.model_id,
-          messages: history.slice(-30).map((m) => ({ role: m.role, content: m.content })),
-          assistantName: asst.name,
-          personality: asst.personality,
-          customInstructions: `${asst.custom_instructions}\nKeep spoken replies short (1-3 sentences). Plain text only: no markdown, no lists, no code blocks.`,
-        }),
-        signal: ctrl.signal,
-      });
-      if (!res.ok || !res.body) {
-        const errJson = await res.json().catch(() => null);
-        throw new Error(errJson?.error ?? `Request failed (${res.status}).`);
-      }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          const t = line.trim();
-          if (!t.startsWith("data:")) continue;
-          const data = t.slice(5).trim();
-          if (data === "[DONE]") continue;
-          try {
-            const json = JSON.parse(data) as { token?: string; error?: string };
-            if (json.error) throw new Error(json.error);
-            if (json.token) {
-              full += json.token;
-              setCaptionAssistant(full);
-            }
-          } catch (e) {
-            if (e instanceof Error && e.message !== "Unexpected end of JSON input") throw e;
-          }
-        }
-      }
+      const chatId = chatIdRef.current;
+      if (!chatId) throw new Error("Voice session expired. End the call and start a new one.");
+      full = await transportRef.current.streamReply(chatId, history, (tok) => {
+        full += tok;
+        setCaptionAssistant(full);
+      }, ctrl.signal);
     } catch (e) {
       if ((e as Error).name === "AbortError") return; // barged-in; a new turn already started
       setCaptionAssistant("");
@@ -336,7 +350,7 @@ export function useVoiceCall(opts: {
     ttsStartedAtRef.current = Date.now();
     const outcome = await playHumiTts({
       text: full,
-      language: ttsLangFor(asst.language, full),
+      language: ttsLangFor(langRef.current, full),
       onEnd: () => {
         if (!aliveRef.current) return;
         if (stateRef.current !== "speaking") return;
@@ -428,18 +442,9 @@ export function useVoiceCall(opts: {
     }
     go("connecting");
     try {
-      const res = await fetch("/api/humi/voice-call", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assistantId: asstRef.current.id }),
-      });
-      const j = (await res.json().catch(() => null)) as { chat?: { id: string } } | null;
-      if (!res.ok || !j?.chat) {
-        throw new Error(
-          (j as { error?: string } | null)?.error ?? "Could not start a voice session."
-        );
-      }
-      chatIdRef.current = j.chat.id;
+      const id = await transportRef.current.startSession();
+      if (!id) throw new Error("Could not start a voice session.");
+      chatIdRef.current = id;
     } catch (e) {
       cleanupAudio();
       fail(e instanceof Error ? e.message : "Could not start a voice session.");

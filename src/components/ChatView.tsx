@@ -16,6 +16,9 @@ import { UserMessage, AssistantMessage, ThinkingRow, type SpeakState } from "./a
 import { MessageList } from "./ai/MessageList";
 import { useVoice } from "./ai/useVoice";
 import type { AIStatus } from "./ai/types";
+import { CallInterface } from "./humi/CallInterface";
+import type { CallExchange, CallTransport } from "./humi/useVoiceCall";
+import { readChatStream } from "./humi/useVoiceCall";
 
 export interface StoredMessage {
   id?: string;
@@ -339,6 +342,21 @@ export function ChatView({
   // Brief "completed" flash on the island after each finished turn.
   const [completedFlash, setCompletedFlash] = useState(false);
   const prevSendingRef = useRef(false);
+  // Live voice call overlay. Mirrored in the URL (?call=1) so the call
+  // has its own link state while staying on this exact page.
+  const [callOpen, setCallOpen] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get("call") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [callMicOk] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      (("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window)) &&
+      !!navigator.mediaDevices?.getUserMedia
+  );
 
   const changeMode = useCallback((m: ChatMode) => {
     modeRef.current = m;
@@ -948,6 +966,66 @@ export function ChatView({
     else v.startListening();
   }, []);
   const clearVoiceText = useCallback(() => setVoiceText(""), []);
+
+  function syncCallParam(open: boolean) {
+    try {
+      const url = new URL(window.location.href);
+      if (open) url.searchParams.set("call", "1");
+      else url.searchParams.delete("call");
+      window.history.replaceState(null, "", url.toString());
+    } catch {
+      // ignore
+    }
+  }
+
+  const activityRef = useRef(activity);
+  activityRef.current = activity;
+
+  const openCall = useCallback(() => {
+    if (sendingRef.current || activityRef.current) return;
+    const v = voiceRef.current;
+    if (v.listening) v.stopListening();
+    if (v.speaking) v.stopSpeaking();
+    setError(null);
+    setCallOpen(true);
+    syncCallParam(true);
+  }, []);
+
+  const closeCall = useCallback(() => {
+    setCallOpen(false);
+    syncCallParam(false);
+  }, []);
+
+  // Voice call runs in the CURRENT conversation thread, same page.
+  const callTransport: CallTransport = useMemo(
+    () => ({
+      startSession: async () => chatId,
+      streamReply: async (_chatId, history, onToken, signal) => {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            modelId: modelIdRef.current,
+            messages: history.slice(-30).map((m) => ({ role: m.role, content: m.content })),
+          }),
+          signal,
+        });
+        return readChatStream(res, onToken);
+      },
+    }),
+    [chatId]
+  );
+
+  const handleCallExchange = useCallback(
+    (ex: CallExchange) => {
+      setMessages((prev) => [...prev, { role: "user", content: ex.userText }, { role: "assistant", content: ex.assistantText }]);
+      void persist("user", ex.userText, []).catch(() => {});
+      void persist("assistant", ex.assistantText, []).catch(() => {});
+      router.refresh();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
   const voiceProp = useMemo(
     () => ({ listening: voice.listening, supported: voice.sttSupported, onMic: micToggle }),
     [voice.listening, voice.sttSupported, micToggle]
@@ -1026,6 +1104,8 @@ export function ChatView({
                 voice={voiceProp}
                 statusLine={liveLine}
                 placeholder={composerPlaceholder}
+                onCall={openCall}
+                callSupported={callMicOk}
               />
             </div>
           </div>
@@ -1123,10 +1203,23 @@ export function ChatView({
                 voice={voiceProp}
                 statusLine={liveLine}
                 placeholder={composerPlaceholder}
+                onCall={openCall}
+                callSupported={callMicOk}
               />
             </div>
           </div>
         </>
+      )}
+      {callOpen && (
+        <CallInterface
+          title="Human AI"
+          avatarSrc="/humi.png"
+          transport={callTransport}
+          language=""
+          initialHistory={messages.slice(-30).map((m) => ({ role: m.role, content: m.content }))}
+          onExchange={handleCallExchange}
+          onClose={closeCall}
+        />
       )}
     </div>
   );

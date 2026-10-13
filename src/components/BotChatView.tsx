@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, ArrowLeft, Plug } from "lucide-react";
+import { Plus, ArrowLeft, Plug, Phone } from "lucide-react";
 import type { PendingImage } from "./ChatInput";
 import { createClient } from "@/lib/supabase/client";
 import type { Bot } from "@/lib/bots";
@@ -16,6 +16,9 @@ import { MessageList } from "./ai/MessageList";
 import { TaskPanel } from "./ai/TaskCard";
 import { useVoice } from "./ai/useVoice";
 import type { AIStatus } from "./ai/types";
+import { CallInterface } from "./humi/CallInterface";
+import type { CallExchange, CallTransport } from "./humi/useVoiceCall";
+import { readChatStream } from "./humi/useVoiceCall";
 
 export interface BotStoredMessage {
   role: "user" | "assistant";
@@ -54,6 +57,13 @@ export function BotChatView({
   const voice = useVoice({ onTranscript: (t) => setVoiceText((prev) => (prev ? `${prev} ${t}` : t)) });
   const [completedFlash, setCompletedFlash] = useState(false);
   const prevSendingRef = useRef(false);
+  const [callOpen, setCallOpen] = useState(false);
+  const [callMicOk] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      (("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window)) &&
+      !!navigator.mediaDevices?.getUserMedia
+  );
 
   useEffect(() => {
     if (prevSendingRef.current && !sending) {
@@ -215,6 +225,49 @@ export function BotChatView({
     router.push(`/bot/${bot.slug}/chat/new`);
   }
 
+  function openCall() {
+    if (sendingRef.current) return;
+    if (voice.listening) voice.stopListening();
+    if (voice.speaking) voice.stopSpeaking();
+    setError(null);
+    setCallOpen(true);
+  }
+
+  // Voice call runs in the CURRENT conversation thread.
+  const callTransport: CallTransport = useMemo(
+    () => ({
+      startSession: async () => conversationId,
+      streamReply: async (chatId, history, onToken, signal) => {
+        const res = await fetch(`/api/bots/${bot.slug}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: chatId,
+            messages: history.slice(-30).map((m) => ({ role: m.role, content: m.content })),
+          }),
+          signal,
+        });
+        if (!res.ok || !res.body) {
+          const errJson = await res.json().catch(() => null);
+          const msg = errJson?.error ?? `Request failed (${res.status}).`;
+          throw new Error(errJson?.upgrade ? `${msg} (Pro required)` : msg);
+        }
+        return readChatStream(res, onToken);
+      },
+    }),
+    [bot.slug, conversationId]
+  );
+
+  const handleCallExchange = useCallback(
+    (ex: CallExchange) => {
+      setMessages((prev) => [...prev, { role: "user", content: ex.userText }, { role: "assistant", content: ex.assistantText }]);
+      void persistUser(ex.userText, []).catch(() => {});
+      router.refresh();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   // Stable identities so memoized children skip re-renders while streaming.
   const sendRef = useRef(send);
   sendRef.current = send;
@@ -312,6 +365,15 @@ export function BotChatView({
           <Link href={`/bots/${bot.slug}`} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title="Bot profile">
             <ArrowLeft size={16} />
           </Link>
+          <button
+            onClick={openCall}
+            disabled={!callMicOk}
+            aria-label={`Call ${bot.name}`}
+            title={callMicOk ? `Call ${bot.name}` : "Voice calls need Chrome or Edge with a microphone"}
+            className="flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+          >
+            <Phone size={14} /> Call
+          </button>
           <button onClick={newChat} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title={`New chat with ${bot.name}`}>
             <Plus size={16} />
           </button>
@@ -396,6 +458,17 @@ export function BotChatView({
             {composer}
           </div>
         </div>
+      )}
+      {callOpen && (
+        <CallInterface
+          title={bot.name}
+          avatarSrc={bot.avatar_url || "/humi.png"}
+          transport={callTransport}
+          language=""
+          initialHistory={messages.slice(-30).map((m) => ({ role: m.role, content: m.content }))}
+          onExchange={handleCallExchange}
+          onClose={() => setCallOpen(false)}
+        />
       )}
     </div>
   );

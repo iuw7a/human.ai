@@ -1,27 +1,31 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef } from "react";
 import { Mic, MicOff, PhoneOff, Volume2, VolumeX } from "lucide-react";
-import { useVoiceCall, type CallAssistant, type CallExchange } from "./useVoiceCall";
+import { useVoiceCall, type CallTransport, type CallExchange, type Turn } from "./useVoiceCall";
 
 /**
  * Full-screen Humi voice-call overlay. Deep black, crimson accents,
  * live mic waveform, state-driven avatar glow. Responsive incl. landscape.
  */
 export function CallInterface({
-  assistant,
+  title,
   avatarSrc,
+  transport,
+  language,
   initialHistory,
   onExchange,
   onClose,
 }: {
-  assistant: CallAssistant;
+  title: string;
   avatarSrc: string;
-  initialHistory: { role: "user" | "assistant"; content: string }[];
+  transport: CallTransport;
+  language: string;
+  initialHistory: Turn[];
   onExchange: (ex: CallExchange) => void;
   onClose: () => void;
 }) {
-  const call = useVoiceCall({ assistant, initialHistory, onExchange, onEnded: onClose });
+  const call = useVoiceCall({ transport, language, initialHistory, onExchange, onEnded: onClose });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const levelsRef = useRef<number[]>([]);
   const startedRef = useRef(false);
@@ -100,7 +104,7 @@ export function CallInterface({
   const glowing = call.state === "speaking" || call.state === "listening";
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/95 backdrop-blur-xl" role="dialog" aria-modal="true" aria-label={`${assistant.name} voice call`}>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/95 backdrop-blur-xl" role="dialog" aria-modal="true" aria-label={`${title} voice call`}>
       <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center px-5 py-8 landscape:max-w-4xl landscape:flex-row landscape:gap-10">
         {/* Avatar + state */}
         <div className="flex shrink-0 flex-col items-center text-center">
@@ -111,7 +115,7 @@ export function CallInterface({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={avatarSrc}
-              alt={assistant.name}
+              alt={title}
               className={`h-28 w-28 rounded-full border border-white/10 object-cover landscape:h-36 landscape:w-36 ${
                 call.state === "speaking" ? "animate-pulse" : ""
               }`}
@@ -128,7 +132,7 @@ export function CallInterface({
               }`}
             />
           </div>
-          <h2 className="mt-4 text-xl font-semibold text-white">{assistant.name}</h2>
+          <h2 className="mt-4 text-xl font-semibold text-white">{title}</h2>
           <p className="mt-1 text-sm text-zinc-400" aria-live="polite">{statusText}</p>
         </div>
 
