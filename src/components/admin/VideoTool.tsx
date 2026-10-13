@@ -7,6 +7,7 @@ import { ArrowUp, Clapperboard, Loader2 } from "lucide-react";
 export function VideoTool() {
   const [prompt, setPrompt] = useState("");
   const [backend, setBackend] = useState<"agnes" | "hf">("agnes");
+  const [agnesModel, setAgnesModel] = useState<"flash" | "full">("flash");
   const [hfModel, setHfModel] = useState("fal-ai/fal-ai/hunyuan-video");
   const [seconds, setSeconds] = useState("5");
   const [size, setSize] = useState("720P");
@@ -65,7 +66,7 @@ export function VideoTool() {
       const res = await fetch("/api/admin/tools/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: p, backend, seconds, size, aspect_ratio: ratio, hfModel }),
+        body: JSON.stringify({ prompt: p, backend, model: agnesModel, seconds, size, aspect_ratio: ratio, hfModel }),
       });
       const ct = res.headers.get("content-type") ?? "";
       if (!res.ok) {
@@ -155,12 +156,16 @@ export function VideoTool() {
             />
           ) : (
             <>
+              <select value={agnesModel} onChange={(e) => setAgnesModel(e.target.value as "flash" | "full")} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Agnes model">
+                <option value="flash" className="bg-ink-900">Flash (free)</option>
+                <option value="full" className="bg-ink-900">2.5 (paid)</option>
+              </select>
               <select value={seconds} onChange={(e) => setSeconds(e.target.value)} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Duration">
                 {["4", "5", "6", "8", "12"].map((s) => (
                   <option key={s} value={s} className="bg-ink-900">{s}s</option>
                 ))}
               </select>
-              <select value={size} onChange={(e) => setSize(e.target.value)} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Resolution">
+              <select value={size} onChange={(e) => setSize(e.target.value)} disabled={agnesModel === "flash"} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none disabled:opacity-40" title={agnesModel === "flash" ? "Flash is fixed to 720P" : "Resolution"}>
                 {["720P", "1080P", "1K", "2K"].map((s) => (
                   <option key={s} value={s} className="bg-ink-900">{s}</option>
                 ))}

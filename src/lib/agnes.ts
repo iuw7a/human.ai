@@ -21,7 +21,8 @@ function errLabel(res: Response, errText: string, what: string): string {
 }
 
 export const AGNES_IMAGE_MODEL = "agnes-image-2.1-flash";
-export const AGNES_VIDEO_MODEL = "agnes-video-2.5";
+export const AGNES_VIDEO_MODEL = "agnes-video-2.5-flash";
+export const AGNES_VIDEO_MODEL_FULL = "agnes-video-2.5";
 
 /** Generate one image. Returns a remote URL (or inline base64 data URI). */
 export async function agnesGenerateImage(opts: {
@@ -74,6 +75,9 @@ export async function agnesCreateVideo(opts: {
 }): Promise<AgnesVideoTask> {
   const prompt = opts.prompt.trim().slice(0, 2000);
   if (!prompt) throw new Error("A prompt is required.");
+  const model = opts.model ?? AGNES_VIDEO_MODEL;
+  // Flash only supports 720P.
+  const size = model === AGNES_VIDEO_MODEL ? "720P" : (opts.size ?? "720P");
   const res = await fetch(`${BASE_URL}/videos`, {
     method: "POST",
     headers: {
@@ -81,11 +85,11 @@ export async function agnesCreateVideo(opts: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: opts.model ?? AGNES_VIDEO_MODEL,
+      model,
       prompt,
       mode: "text",
       seconds: opts.seconds ?? "5",
-      size: opts.size ?? "720P",
+      size,
       aspect_ratio: opts.aspect_ratio ?? "16:9",
     }),
     signal: AbortSignal.timeout(60_000),
@@ -130,13 +134,14 @@ export async function agnesCreateAndWaitVideo(opts: {
   seconds?: string;
   size?: "720P" | "1080P" | "1K" | "2K";
   aspect_ratio?: string;
+  model?: string;
   maxWaitMs?: number;
 }): Promise<AgnesVideoTask> {
   const task = await agnesCreateVideo(opts);
   const deadline = Date.now() + (opts.maxWaitMs ?? 200_000);
   let delay = 2000;
   for (;;) {
-    const cur = await agnesGetVideo(task.video_id).catch(() => null);
+    const cur = await agnesGetVideo(task.video_id, opts.model).catch(() => null);
     if (cur && (cur.status === "completed" || cur.status === "failed")) {
       if (cur.status === "failed") throw new Error("Video generation failed.");
       return cur;

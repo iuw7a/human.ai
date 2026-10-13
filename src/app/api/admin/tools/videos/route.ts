@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getAdmin } from "@/lib/admin";
-import { agnesCreateAndWaitVideo, agnesGetVideo } from "@/lib/agnes";
+import { AGNES_VIDEO_MODEL, AGNES_VIDEO_MODEL_FULL, agnesCreateAndWaitVideo, agnesGetVideo } from "@/lib/agnes";
 import { HF_DEFAULT_VIDEO_MODEL, hfTextToVideo } from "@/lib/hfvideo";
 
 export const runtime = "nodejs";
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   if (!adminUser) return Response.json({ error: "Forbidden." }, { status: 403 });
   try {
     const b = (await req.json().catch(() => null)) as {
-      prompt?: unknown; backend?: unknown; seconds?: unknown; size?: unknown; aspect_ratio?: unknown; hfModel?: unknown;
+      prompt?: unknown; backend?: unknown; seconds?: unknown; size?: unknown; aspect_ratio?: unknown; hfModel?: unknown; model?: unknown;
     } | null;
     const prompt = typeof b?.prompt === "string" ? b.prompt : "";
     if (!prompt.trim()) return Response.json({ error: "A prompt is required." }, { status: 400 });
@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
     const seconds = typeof b?.seconds === "string" && SECONDS.includes(b.seconds) ? b.seconds : "5";
     const size = (typeof b?.size === "string" && (SIZES as readonly string[]).includes(b.size) ? b.size : "720P") as typeof SIZES[number];
     const aspect_ratio = typeof b?.aspect_ratio === "string" && RATIOS.includes(b.aspect_ratio) ? b.aspect_ratio : "16:9";
-    const out = await agnesCreateAndWaitVideo({ prompt, seconds, size, aspect_ratio });
+    const model = b?.model === "full" ? AGNES_VIDEO_MODEL_FULL : AGNES_VIDEO_MODEL;
+    const out = await agnesCreateAndWaitVideo({ prompt, seconds, size, aspect_ratio, model });
     return Response.json({ ok: true, ...out });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed.";
