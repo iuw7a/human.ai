@@ -78,29 +78,48 @@ export async function agnesCreateVideo(opts: {
   const model = opts.model ?? AGNES_VIDEO_MODEL;
   // Flash only supports 720P.
   const size = model === AGNES_VIDEO_MODEL ? "720P" : (opts.size ?? "720P");
-  const res = await fetch(`${BASE_URL}/videos`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${agnesKey()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      prompt,
-      mode: "text",
-      seconds: opts.seconds ?? "5",
-      size,
-      aspect_ratio: opts.aspect_ratio ?? "16:9",
-    }),
-    signal: AbortSignal.timeout(60_000),
+  const payload = JSON.stringify({
+    model,
+    prompt,
+    mode: "text",
+    seconds: opts.seconds ?? "5",
+    size,
+    aspect_ratio: opts.aspect_ratio ?? "16:9",
   });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(errLabel(res, t, "Video task creation"));
+  // The video queue fills up at peak times — retry with backoff instead of
+  // failing immediately (docs recommend this for 429/503).
+  let lastErr = "";
+  let delay = 5000;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const res = await fetch(`${BASE_URL}/videos`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${agnesKey()}`,
+        "Content-Type": "application/json",
+      },
+      body: payload,
+      signal: AbortSignal.timeout(60_000),
+    }).catch((e: unknown) => null);
+    if (!res) {
+      lastErr = "Video API unreachable.";
+    } else if (res.ok) {
+      const j = (await res.json()) as { video_id?: string; status?: string; progress?: number };
+      if (!j.video_id) throw new Error("Video API returned no video_id.");
+      return { video_id: j.video_id, status: j.status ?? "queued", progress: j.progress ?? 0 };
+    } else {
+      const t = await res.text().catch(() => "");
+      if ((res.status === 503 || res.status === 429) && attempt < 5) {
+        lastErr = `Video queue full (attempt ${attempt + 1}/6).`;
+        await new Promise((r) => setTimeout(r, delay));
+        delay = Math.min(delay * 1.6, 30000);
+        continue;
+      }
+      throw new Error(errLabel(res, t, "Video task creation"));
+    }
+    await new Promise((r) => setTimeout(r, delay));
+    delay = Math.min(delay * 1.6, 30000);
   }
-  const j = (await res.json()) as { video_id?: string; status?: string; progress?: number };
-  if (!j.video_id) throw new Error("Video API returned no video_id.");
-  return { video_id: j.video_id, status: j.status ?? "queued", progress: j.progress ?? 0 };
+  throw new Error(`${lastErr} Please retry later.`);
 }
 
 /** Poll one video task until done (throws on failure). */
