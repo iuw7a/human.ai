@@ -40,6 +40,12 @@ export async function POST(req: NextRequest) {
     const out = await agnesCreateAndWaitVideo({ prompt, seconds, size, aspect_ratio });
     return Response.json({ ok: true, ...out });
   } catch (e) {
-    return Response.json({ error: e instanceof Error ? e.message : "Failed." }, { status: 500 });
+    const msg = e instanceof Error ? e.message : "Failed.";
+    // Same key works for images but not videos → the key lacks video scope/quota.
+    const hinted =
+      /rejected the server credentials|401/.test(msg)
+        ? `${msg} (If images work but videos don't, this key has no video permission — create a key with video access.)`
+        : msg;
+    return Response.json({ error: hinted }, { status: 500 });
   }
 }
