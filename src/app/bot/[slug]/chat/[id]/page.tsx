@@ -35,7 +35,7 @@ export default async function BotChatThreadPage({
   }
 
   const probe = await getAccessibleBot(params.slug, user.id);
-  if (!probe) redirect("/bots");
+  if (!probe) redirect("/");
   const bot = probe.bot;
   const isOwner = probe.owner;
 

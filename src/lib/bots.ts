@@ -261,7 +261,7 @@ export async function getAccessibleBot(slug: string, userId: string): Promise<{ 
 }
 
 /** Slugs of the official Human AI bots (seeded, always listed as official). */
-export const OFFICIAL_BOT_SLUGS = new Set(["humi", "codey", "study", "research", "creator", "analyst"]);
+export const OFFICIAL_BOT_SLUGS = new Set(["humi", "rema", "codey", "study", "research", "creator", "analyst"]);
 
 /** Validate a model slug for bot use (exists + enabled). Returns provider model info. */
 export async function resolveBotModel(modelId: string): Promise<

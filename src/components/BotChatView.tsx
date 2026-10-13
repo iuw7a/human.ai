@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, ArrowLeft, Plug, Phone } from "lucide-react";
+import { Plus, ArrowLeft, Phone } from "lucide-react";
 import type { PendingImage } from "./ChatInput";
 import { createClient } from "@/lib/supabase/client";
 import type { Bot } from "@/lib/bots";
@@ -364,7 +364,7 @@ export function BotChatView({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Link href={`/bots/${bot.slug}`} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title="Bot profile">
+          <Link href={`/${bot.slug}`} className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white" title="Bot profile">
             <ArrowLeft size={16} />
           </Link>
           <button
@@ -452,10 +452,17 @@ export function BotChatView({
         <div className="relative z-10">
           <div className="mx-auto w-full max-w-3xl space-y-2 px-4 pb-5 pt-2 sm:px-6">
             {isOwner && <TaskPanel botSlug={bot.slug} accent={bot.theme.accent} />}
-            <div className="flex items-center justify-center">
-              <a href="/bots" className="inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-900 px-2.5 py-1 text-[11px] text-zinc-400 transition-colors hover:text-white">
-                <Plug size={11} /> Bots
-              </a>
+            <div className="flex items-center justify-center gap-1.5">
+              {bot.slug !== "humi" && (
+                <a href="/humi" className="inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-900 px-2.5 py-1 text-[11px] text-zinc-400 transition-colors hover:text-white">
+                  Humi
+                </a>
+              )}
+              {bot.slug !== "rema" && (
+                <a href="/rema" className="inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-900 px-2.5 py-1 text-[11px] text-zinc-400 transition-colors hover:text-white">
+                  Rema
+                </a>
+              )}
             </div>
             {composer}
           </div>

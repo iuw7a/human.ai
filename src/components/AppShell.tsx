@@ -20,7 +20,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         .order("updated_at", { ascending: false })
         .limit(30);
       if (error) throw error;
-      // Humi conversations live on /urhumi — keep the main sidebar to regular chats.
+      // Bot threads live on /bot/[slug]/chat — keep the main sidebar to regular chats.
       chats = ((data ?? []) as typeof chats).filter((c) => !c.humi_assistant_id);
     } catch {
       // Pre-migration database (no humi_assistant_id yet): previous behavior.

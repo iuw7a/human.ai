@@ -20,10 +20,10 @@ export default async function BotChatNewPage({ params }: { params: { slug: strin
   } catch {
     isPro = false;
   }
-  if (!isPro) redirect("/bots");
+  if (!isPro) redirect("/");
 
   const probe = await getAccessibleBot(params.slug, user.id);
-  if (!probe) redirect("/bots");
+  if (!probe) redirect("/");
   const bot = probe.bot;
 
   const convId =

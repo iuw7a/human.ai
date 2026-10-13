@@ -1,36 +1,29 @@
-﻿import Link from "next/link";
-import { ArrowUpRight, MessagesSquare, Pencil } from "lucide-react";
+import Link from "next/link";
+import { ArrowUpRight, MessagesSquare } from "lucide-react";
 import { BotAvatar } from "../BotAvatar";
-import type { MarketBot } from "@/lib/bots-marketplace";
-import { FavoriteButton } from "./FavoriteButton";
-import { ShareButton } from "./ShareButton";
+import type { Bot } from "@/lib/bots";
 
-/** Public bot profile: large avatar, identity, capabilities, start chat, preview stats. */
+export interface BotPageStats {
+  conversations: number;
+  messages: number;
+}
+
+/** Public bot profile: large avatar, identity, capabilities, start chat, stats. */
 export function BotProfile({
   bot,
   capabilities,
   stats,
-  isOwner,
 }: {
-  bot: MarketBot;
+  bot: Bot;
   capabilities: string[];
-  stats: { conversations: number; messages: number; favorites: number };
-  isOwner: boolean;
+  stats: BotPageStats;
 }) {
-  const big = bot.slug === "humi";
+  const big = bot.slug === "humi" || bot.slug === "rema";
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
       <div className="flex flex-col items-center text-center">
-        <div
-          className="relative"
-          style={big ? { filter: "drop-shadow(0 24px 60px rgba(0,0,0,0.6))" } : undefined}
-        >
+        <div style={big ? { filter: "drop-shadow(0 24px 60px rgba(0,0,0,0.6))" } : undefined}>
           <BotAvatar src={bot.avatar_url} name={bot.name} size={big ? 168 : 120} accent={bot.theme.accent} />
-          {bot.official && (
-            <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-accent px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white">
-              Official
-            </span>
-          )}
         </div>
         <h1 className="mt-5 text-3xl font-bold tracking-tight text-white sm:text-4xl">{bot.name}</h1>
         <p className="mt-1 font-mono text-sm text-zinc-500">@{bot.slug}</p>
@@ -39,38 +32,27 @@ export function BotProfile({
         </p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-zinc-400">
           <span className="rounded-full border border-white/10 px-2.5 py-1">{bot.category}</span>
-          <span className="rounded-full border border-white/10 px-2.5 py-1">by {bot.creator}</span>
+          <span className="rounded-full border border-white/10 px-2.5 py-1">by Human AI</span>
           {capabilities.map((c) => (
             <span key={c} className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">
               {c}
             </span>
           ))}
         </div>
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
+        <div className="mt-6">
           <Link
             href={`/bot/${bot.slug}/chat/new`}
             className="inline-flex items-center gap-1.5 rounded-2xl bg-white px-6 py-3 text-[15px] font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
           >
             Start Chat <ArrowUpRight size={17} />
           </Link>
-          <FavoriteButton slug={bot.slug} initial={bot.favorite} />
-          <ShareButton slug={bot.slug} />
-          {isOwner && (
-            <Link
-              href={`/bots/${bot.slug}/edit`}
-              className="inline-flex items-center gap-1.5 rounded-2xl border border-white/10 px-4 py-2.5 text-sm text-zinc-200 transition-colors hover:text-white"
-            >
-              <Pencil size={14} /> Edit
-            </Link>
-          )}
         </div>
       </div>
 
-      <div className="mt-10 grid grid-cols-3 gap-2.5">
+      <div className="mt-10 grid grid-cols-2 gap-2.5">
         {[
           ["Conversations", stats.conversations],
           ["Messages", stats.messages],
-          ["Saves", stats.favorites],
         ].map(([label, value]) => (
           <div
             key={label as string}
@@ -86,4 +68,3 @@ export function BotProfile({
     </div>
   );
 }
-

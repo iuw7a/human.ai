@@ -10,6 +10,7 @@ import type { ChatMode } from "./ModeSelector";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { DynamicIsland } from "./ai/DynamicIsland";
 import { MascotAvatar } from "./ai/MascotAvatar";
+import { BotAvatar } from "./BotAvatar";
 import { Composer } from "./ai/Composer";
 import { PlanBadge } from "./PlanBadge";
 import { UserMessage, AssistantMessage, ThinkingRow, type SpeakState } from "./ai/Message";
@@ -25,6 +26,30 @@ export interface StoredMessage {
   role: "user" | "assistant";
   content: string;
   images?: { url: string; storagePath?: string }[];
+}
+
+/** Humi + Rema quick buttons, bottom-right of the main chat. */
+function CompanionSwitcher() {
+  return (
+    <div className="mb-2 flex items-center justify-end gap-2">
+      <a
+        href="/humi"
+        title="Chat with Humi"
+        className="group flex items-center gap-2 rounded-full border border-white/[0.09] bg-white/[0.03] py-1 pl-1 pr-3 transition-colors hover:border-white/20 hover:bg-white/[0.06]"
+      >
+        <BotAvatar src="/humi.png" name="Humi" size={26} />
+        <span className="text-xs font-medium text-zinc-300 group-hover:text-white">Humi</span>
+      </a>
+      <a
+        href="/rema"
+        title="Chat with Rema"
+        className="group flex items-center gap-2 rounded-full border border-white/[0.09] bg-white/[0.03] py-1 pl-1 pr-3 transition-colors hover:border-white/20 hover:bg-white/[0.06]"
+      >
+        <BotAvatar src="/rema.png" name="Rema" size={26} accent="#f472b6" />
+        <span className="text-xs font-medium text-zinc-300 group-hover:text-white">Rema</span>
+      </a>
+    </div>
+  );
 }
 
 function ChromeChips({ servers }: { servers: { id: string; name: string }[] }) {
@@ -1091,6 +1116,7 @@ export function ChatView({
             </div>
             <div className="mt-7">
               <ChromeChips servers={mcpServers} />
+              <CompanionSwitcher />
               <Composer
                 onSend={stableSend}
                 sending={sending}
@@ -1190,6 +1216,7 @@ export function ChatView({
           <div className="relative z-10">
             <div className="mx-auto w-full max-w-3xl px-4 pb-5 pt-2 sm:px-6">
               <ChromeChips servers={mcpServers} />
+              <CompanionSwitcher />
               <Composer
                 onSend={stableSend}
                 sending={sending}
