@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { StatusPill, ConfirmButton, useToast } from "@/components/admin/ui";
+import { PLANS, PLAN_LABELS, planLabel } from "@/lib/plan-labels";
 
 export function UserActions({
   id, plan, banned, status, subscriptionStatus, existingNote = "",
@@ -56,14 +57,14 @@ export function UserActions({
       {ToastEl}
       {!grantOpen ? (
         <button onClick={() => setGrantOpen(true)} className={btn}>
-          {plan === "free" ? "Grant Plus/Pro…" : `Change ${plan}…`}
+          {plan === "free" ? "Grant a plan…" : `Change ${planLabel(plan)}…`}
         </button>
       ) : (
         <span className="flex flex-wrap items-center gap-1.5 rounded-xl border border-ink-700 bg-ink-900 p-2">
           <select value={grantPlan} onChange={(e) => setGrantPlan(e.target.value)} className="input !w-auto !px-2 !py-1 text-xs">
-            <option value="plus">Plus</option>
-            <option value="pro">Pro</option>
-            <option value="free">Free</option>
+            {[...PLANS].reverse().map((p) => (
+              <option key={p} value={p}>{PLAN_LABELS[p]}</option>
+            ))}
           </select>
           <select value={duration} onChange={(e) => setDuration(e.target.value)} className="input !w-auto !px-2 !py-1 text-xs">
             <option value="7">7 days</option>

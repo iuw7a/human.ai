@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
+import { AdminLayoutContent } from "@/components/admin/AdminLayoutContent";
 
 export const dynamic = "force-dynamic";
 
@@ -62,15 +63,13 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-ink-950 text-zinc-100">
+    <div className="flex h-screen overflow-hidden bg-black text-zinc-100">
       <AdminSidebar
         adminName={profile?.name ?? user.email ?? "Admin"}
         adminRole={role}
       />
-      <main className="min-w-0 flex-1">
-        <div className="mx-auto w-full max-w-6xl px-4 py-8 pl-14 sm:px-8 lg:pl-8">
-          {children}
-        </div>
+      <main className="min-w-0 flex-1 h-screen overflow-hidden flex flex-col">
+        <AdminLayoutContent>{children}</AdminLayoutContent>
       </main>
     </div>
   );

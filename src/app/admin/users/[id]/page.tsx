@@ -4,7 +4,7 @@ import { createAdminSupabase } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin";
 import { PageHeader, StatusPill } from "@/components/admin/ui";
 import { UserActions } from "@/components/admin/UserActions";
-import { SubscriptionBadge, SourceBadge } from "@/components/SubscriptionBadge";
+import { SubscriptionBadge, SourceBadge, planLabel, planTone } from "@/components/SubscriptionBadge";
 import { getEntitlements } from "@/lib/subscriptions";
 
 export const dynamic = "force-dynamic";
@@ -78,7 +78,7 @@ export default async function AdminUserDetail({ params }: { params: { id: string
           <p><span className="text-zinc-500">Providers:</span> <span className="text-white">{(user.app_metadata?.providers ?? []).join(", ") || "—"}</span></p>
         </div>
         <div className="space-y-1.5 text-sm">
-          <p className="flex items-center gap-2"><span className="text-zinc-500">Plan:</span> <StatusPill value={plan} tone={plan === "pro" ? "blue" : plan === "plus" ? "amber" : "gray"} /></p>
+          <p className="flex items-center gap-2"><span className="text-zinc-500">Plan:</span> <StatusPill value={planLabel(plan)} tone={planTone(plan)} /></p>
           <p className="flex items-center gap-2"><span className="text-zinc-500">Subscription:</span> <StatusPill value={banned ? "banned" : subStatus} tone={banned ? "red" : subStatus === "active" ? "green" : subStatus === "suspended" ? "red" : subStatus === "expired" ? "amber" : "gray"} /></p>
           <p className="flex items-center gap-2"><span className="text-zinc-500">Account:</span> <StatusPill value={banned ? "banned" : status} tone={banned || status !== "active" ? "red" : "green"} /></p>
           <p className="flex items-center gap-2"><span className="text-zinc-500">Role:</span> <StatusPill value={profile?.role ?? "user"} tone="blue" /></p>

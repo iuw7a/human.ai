@@ -1,5 +1,6 @@
 ﻿import Link from "next/link";
 import { PlatformShell } from "@/components/platform/PlatformShell";
+import { WordmarkFooter } from "@/components/site/WordmarkFooter";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export default async function ApiDocsPage() {
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">API Documentation</h1>
         <p className="mb-2 mt-2 text-[15px] text-zinc-400">
           Call Human AI from your own apps and scripts. Get a key on the{" "}
-          <Link href="/platform/api" className="text-white underline underline-offset-4 hover:no-underline">
+          <Link href="/platform/dash/apikey" className="text-white underline underline-offset-4 hover:no-underline">
             API Keys page
           </Link>
           .
@@ -39,6 +40,15 @@ export default async function ApiDocsPage() {
         <P>
           Send your key on every request as the <code className="font-mono text-zinc-200">x-api-key</code> header.
           Keys act as you and follow your plan limits. Never put a key in client-side code or a public repo.
+        </P>
+
+        <H>Key scopes</H>
+        <P>
+          When you create a key you pick what it may call: <code className="font-mono text-zinc-200">Chat only</code> (text model Speed),{" "}
+          <code className="font-mono text-zinc-200">Images only</code> (image model humi.1 images), or{" "}
+          <code className="font-mono text-zinc-200">Chat + Images</code> (both). API keys only work with these two models — any
+          other <code className="font-mono text-zinc-200">modelId</code> is rejected with <code className="font-mono text-zinc-200">403</code>.
+          Calling outside your key&apos;s scope also returns <code className="font-mono text-zinc-200">403</code>.
         </P>
 
         <H>Base URL</H>
@@ -121,6 +131,22 @@ print(full)`}</Code>
         </P>
         <Code label="message with image">{`{ "role": "user", "content": "What is this?", "images": [{ "url": "https://…" }] }`}</Code>
 
+        <H>Generate an image (humi.1 images)</H>
+        <P>
+          Text-to-image needs a key with the <code className="font-mono text-zinc-200">Images</code> scope. The prompt is the last
+          user message; the answer streams back as Markdown with the image. The reply ends with{" "}
+          <code className="font-mono text-zinc-200">*Generated with humi.1 images*</code>.
+        </P>
+        <Code label="POST /api/chat (image)">{`curl https://usehuman.de/api/chat \\
+  -H "x-api-key: YOUR_IMAGES_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "modelId": "humi.1-images",
+    "messages": [
+      { "role": "user", "content": "A red apple on a wooden table, morning light" }
+    ]
+  }'`}</Code>
+
         <H>Errors</H>
         <P>
           <code className="font-mono text-zinc-200">401</code> invalid key ·{" "}
@@ -139,13 +165,14 @@ print(full)`}</Code>
 
         <div className="mt-8">
           <Link
-            href="/platform/api"
+            href="/platform/dash/apikey"
             className="inline-flex items-center gap-1.5 rounded-2xl bg-white px-6 py-3 text-[15px] font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
           >
             Get an API key
           </Link>
         </div>
       </div>
+      <WordmarkFooter />
     </PlatformShell>
   );
 }

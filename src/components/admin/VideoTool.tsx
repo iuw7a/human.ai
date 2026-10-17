@@ -6,7 +6,7 @@ import { ArrowUp, Clapperboard, Loader2 } from "lucide-react";
 /** Admin video studio: prompt bar + async task with live progress + player. */
 export function VideoTool() {
   const [prompt, setPrompt] = useState("");
-  const [backend, setBackend] = useState<"agnes" | "hf">("agnes");
+  const [backend, setBackend] = useState<"agnes" | "hf" | "json2video">("json2video");
   const [agnesModel, setAgnesModel] = useState<"flash" | "full">("flash");
   const [hfModel, setHfModel] = useState("fal-ai/fal-ai/hunyuan-video");
   const [seconds, setSeconds] = useState("5");
@@ -29,9 +29,9 @@ export function VideoTool() {
 
   useEffect(() => stopPoll, []);
 
-  async function pollOnce(id: string): Promise<boolean> {
+  async function pollOnce(id: string, provider: string): Promise<boolean> {
     try {
-      const res = await fetch(`/api/admin/tools/videos?video_id=${encodeURIComponent(id)}`);
+      const res = await fetch(`/api/admin/tools/videos?video_id=${encodeURIComponent(id)}&provider=${provider}`);
       const j = await res.json().catch(() => null);
       if (!res.ok) throw new Error(j?.error ?? "Status check failed.");
       setStatus(j.status ?? "");
@@ -90,13 +90,14 @@ export function VideoTool() {
         setBusy(false);
         return;
       }
-      // Still rendering (Agnes) — keep polling client-side.
+      // Still rendering (Agnes / JSON2Video) — keep polling client-side.
       if (!j.video_id) throw new Error("Video provider returned nothing usable.");
       setVideoId(j.video_id);
       setStatus(j.status ?? "in_progress");
       setProgress(j.progress ?? 0);
       const id = j.video_id as string;
-      pollRef.current = window.setInterval(() => void pollOnce(id), 3000);
+      const provider = backend === "json2video" ? "json2video" : "agnes";
+      pollRef.current = window.setInterval(() => void pollOnce(id, provider), 5000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed.");
       setBusy(false);
@@ -142,11 +143,18 @@ export function VideoTool() {
           className="max-h-[200px] w-full resize-none bg-transparent px-2 py-1 text-[15px] leading-6 text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
         />
         <div className="mt-1 flex flex-wrap items-center gap-2 px-1">
-          <select value={backend} onChange={(e) => setBackend(e.target.value as "agnes" | "hf")} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Backend">
+          <select value={backend} onChange={(e) => setBackend(e.target.value as "agnes" | "hf" | "json2video")} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Backend">
+            <option value="json2video" className="bg-ink-900">JSON2Video</option>
             <option value="agnes" className="bg-ink-900">Agnes</option>
             <option value="hf" className="bg-ink-900">HuggingFace</option>
           </select>
-          {backend === "hf" ? (
+          {backend === "json2video" ? (
+            <select value={seconds} onChange={(e) => setSeconds(e.target.value)} className="rounded-xl border border-white/10 bg-transparent px-2 py-1.5 text-xs text-zinc-300 focus:outline-none" title="Duration (1 credit/sec)">
+              {["5", "10", "15", "30"].map((s) => (
+                <option key={s} value={s} className="bg-ink-900">{s}s</option>
+              ))}
+            </select>
+          ) : backend === "hf" ? (
             <input
               value={hfModel}
               onChange={(e) => setHfModel(e.target.value)}
@@ -192,8 +200,10 @@ export function VideoTool() {
         {busy
           ? backend === "hf"
             ? "Rendering with Hugging Face (minutes possible)…"
-            : "Rendering with Agnes Video 2.5 (minutes possible)…"
-          : "Agnes async task API or HF Inference Providers · keys stay server-side"}
+            : backend === "json2video"
+              ? "Rendering with JSON2Video (1 credit/sec)…"
+              : "Rendering with Agnes Video 2.5 (minutes possible)…"
+          : "JSON2Video, Agnes async task API or HF Inference Providers · keys stay server-side"}
       </p>
     </div>
   );

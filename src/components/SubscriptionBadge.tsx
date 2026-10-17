@@ -1,10 +1,13 @@
 "use client";
 
 import { StatusPill } from "@/components/admin/ui";
+import { normalizePlan, planLabel as labelForPlan } from "@/lib/plan-labels";
 
-export function planTone(plan: string): "gray" | "amber" | "blue" {
-  if (plan === "pro") return "blue";
-  if (plan === "plus") return "amber";
+export function planTone(plan: string): "gray" | "amber" | "blue" | "green" {
+  const key = normalizePlan(plan);
+  if (key === "humi_extra" || key === "humi_enterprises") return "green";
+  if (key === "pro" || key === "humi_pro") return "blue";
+  if (key === "plus" || key === "humi_elite") return "amber";
   return "gray";
 }
 
@@ -23,9 +26,7 @@ export function sourceTone(source: string | null): "gray" | "blue" | "amber" | "
 }
 
 export function planLabel(plan: string): string {
-  if (plan === "pro") return "Pro";
-  if (plan === "plus") return "Plus";
-  return "Free";
+  return labelForPlan(plan);
 }
 
 export function sourceLabel(source: string | null): string {

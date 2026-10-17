@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { ChatView } from "@/components/ChatView";
 import { DEFAULT_MODEL_ID } from "@/lib/models";
@@ -10,6 +11,10 @@ interface PageProps {
 
 export default async function ChatPage({ params }: PageProps) {
   const { chatId } = params;
+  // Partner funnel: /chat/sham.ai.usehuman.de goes to Sham AI.
+  if (chatId === "sham.ai.usehuman.de") {
+    redirect("https://sham.ai.usehuman.de");
+  }
   const supabase = createServerSupabase();
   const {
     data: { user },

@@ -35,7 +35,7 @@ export async function PATCH(
   try {
     const body = (await req.json()) as {
       op?: "ban" | "unban" | "disable" | "enable" | "plan" | "role" | "note" | "suspend" | "restore" | "revoke";
-      plan?: "free" | "plus" | "pro";
+      plan?: string;
       source?: string;
       duration_days?: number;
       expires_at?: string;

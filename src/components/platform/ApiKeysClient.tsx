@@ -11,12 +11,23 @@ interface KeyRow {
   usage_count: number;
   last_used_at: string | null;
   created_at: string;
+  scopes?: string[];
+  scope_label?: string;
 }
+
+type ScopeSel = "all" | "chat" | "images";
+
+const SCOPE_OPTIONS: { id: ScopeSel; label: string; hint: string }[] = [
+  { id: "all", label: "Chat + Images", hint: "Speed & humi.1 images" },
+  { id: "chat", label: "Chat only", hint: "Speed (text)" },
+  { id: "images", label: "Images only", hint: "humi.1 images" },
+];
 
 /** Personal API key manager: create (raw shown once), copy, revoke. */
 export function ApiKeysClient() {
   const [keys, setKeys] = useState<KeyRow[] | null>(null);
   const [label, setLabel] = useState("");
+  const [scope, setScope] = useState<ScopeSel>("all");
   const [raw, setRaw] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -40,7 +51,7 @@ export function ApiKeysClient() {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label }),
+        body: JSON.stringify({ label, scope }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok) throw new Error(j?.error ?? "Failed.");
@@ -112,7 +123,30 @@ export function ApiKeysClient() {
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Create
           </button>
         </div>
-        <p className="mt-2 text-xs text-zinc-500">Max 5 active keys. Keys call the API as you, with your plan.</p>
+        <div className="mt-3 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Key scope">
+          {SCOPE_OPTIONS.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              role="radio"
+              aria-checked={scope === o.id}
+              onClick={() => setScope(o.id)}
+              className={`rounded-2xl border px-3 py-2 text-left transition-colors ${
+                scope === o.id
+                  ? "border-accent/60 bg-accent/10"
+                  : "border-white/10 bg-white/[0.03] hover:border-white/25"
+              }`}
+            >
+              <span className={`block text-[13px] font-semibold ${scope === o.id ? "text-white" : "text-zinc-300"}`}>
+                {o.label}
+              </span>
+              <span className="block truncate text-[11px] text-zinc-500">{o.hint}</span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-zinc-500">
+          Max 5 active keys. Keys call the API as you, with your plan — and only the two models Speed + humi.1 images.
+        </p>
       </div>
 
       <div className="rounded-[22px] border border-white/[0.07] bg-white/[0.02] p-5">
@@ -122,7 +156,14 @@ export function ApiKeysClient() {
           {keys?.map((k) => (
             <div key={k.id} className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-black/40 px-3.5 py-2.5">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-zinc-100">{k.name.replace(/^Human AI API:\s*/, "")}</p>
+                <p className="flex items-center gap-2 truncate text-sm text-zinc-100">
+                  <span className="truncate">{k.name.replace(/^Human AI API:\s*/, "")}</span>
+                  {(k.scope_label || (k.scopes && k.scopes.length > 0)) && (
+                    <span className="shrink-0 rounded-full border border-white/15 bg-white/[0.05] px-2 py-0.5 text-[10px] font-medium text-zinc-300">
+                      {k.scope_label ?? (k.scopes ?? []).join(" + ")}
+                    </span>
+                  )}
+                </p>
                 <p className="font-mono text-[11px] text-zinc-500">
                   {k.prefix}… · {k.usage_count ?? 0} calls
                   {k.last_used_at ? ` · used ${new Date(k.last_used_at).toLocaleDateString()}` : " · never used"}

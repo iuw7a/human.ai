@@ -80,16 +80,21 @@ src/
     chat/[chatId]/page.tsx      # Chat (kanonisch: /chat/[id])
     chat/[chatId]/[modelId]/    # Legacy → redirect auf /chat/[id]
     login|signup|logout|profile|account|memory|platform|terms|plugins|library
+    platform/dash/              # Developer-Dashboard (eigene Sidebar, Login nötig)
+    platform/dash/layout.tsx    # Auth-Gate + DashShell
     api/chat/route.ts           # AI-Endpoint (SSE-Stream, System-Prompt + Memories)
     api/upload/route.ts         # Bild-Upload (validiert, max. 8 MB, privat)
     api/account/delete/route.ts # Account-Löschung (Admin)
   components/
     Sidebar.tsx                 # Workspace-Nav + Chats + dunkles User-Menü
+    platform/dash/              # DashShell (Sidebar) + ui.tsx + Playground/Status/NewKey
+    site/WordmarkFooter.tsx     # Kontur-Wortmarke mit Maus-Füllung (Skill: human-ai-visual-style)
     ChatView.tsx                # Streaming-Logik + Persistenz
     ChatInput.tsx               # Input-Card + Bildvorschau
     Landing.tsx / Logo.tsx / Markdown.tsx / AppShell.tsx / ...
   lib/
     models.ts                   # Model-Registry (Slug → Provider + Provider-Modell-ID)
+    dash.ts                     # Dashboard-Daten (Keys, Nutzung, neutrale Fehlertexte)
     systemPrompt.ts             # Human AI Master System Prompt
     chatHistory.ts              # History-Loader (RLS, signierte Bild-URLs)
     providers/
@@ -125,6 +130,60 @@ Neues Modell = ein Eintrag in `src/lib/models.ts`:
 | `/login`, `/signup`, `/logout`, `/terms`, `/platform/about` | öffentlich |
 | `/profile`, `/account`, `/memory`, `/platform`, `/plugins`, `/library` | Login nötig |
 | `/urhumi`, `/urhumi/[id]`, `/urhumi/[id]/edit` | Login nötig (`/urhumi` zeigt ausgeloggt Hero + Login-CTA) |
+| `/platform/dash/**` | Login nötig (eigene Sidebar, siehe unten) |
+
+## Developer-Dashboard (`/platform/dash`)
+
+Eigener Bereich für API-Zugang, Nutzung und Abrechnung — mit eigener Sidebar
+(`src/components/platform/dash/DashShell.tsx`), getrennt vom Chat und von `/platform`.
+Das Layout (`src/app/platform/dash/layout.tsx`) erzwingt Login und leitet sonst auf
+`/login?next=/platform/dash` um.
+
+| Gruppe | Seiten |
+|---|---|
+| Übersicht | `/platform/dash`, `/platform/dash/dev` |
+| API-Zugang | `/apikey`, `/apikey/new`, `/apikey/usage`, `/apikey/logs`, `/apikey/scopes` |
+| Nutzung | `/usage`, `/usage/models`, `/usage/limits`, `/usage/logs`, `/tokens` |
+| Abrechnung | `/billing`, `/billing/plan`, `/billing/invoices` |
+| Modelle & Tools | `/playground`, `/models`, `/integrations`, `/docs` |
+| Team | `/team`, `/team/members`, `/team/roles` |
+| Konto | `/profile`, `/settings`, `/security`, `/logs`, `/webhooks`, `/status`, `/changelog`, `/support` |
+
+`/platform` ist **reine Information** (Funktionen, Modelle, Explore-Links) — es bedient nichts mehr.
+`/platform/api` (alte Key-Seite) leitet auf `/platform/dash/apikey` um, damit alte Links weiter
+funktionieren; die API-Referenz bleibt unter `/platform/api/docs`.
+
+Regeln für diesen Bereich:
+
+- **Nur echte Daten.** Zahlen kommen aus `api_keys` und `model_usage_logs`
+  (`src/lib/dash.ts`). Was es noch nicht gibt (Team, Webhooks, Rechnungen), wird als
+  „in Vorbereitung“ ausgewiesen — nie mit erfundenen Werten gefüllt.
+- **White-Label.** Provider-/Gateway-Namen und rohe Fehlertexte verlassen `dash.ts` nie:
+  Tabellen zeigen neutrale Modellnamen, Fehler erscheinen als kurze deutsche Gründe
+  (`friendlyError`).
+- **Sitzung statt Key.** Der Playground ruft `/api/chat` mit der Session auf — zum
+  Ausprobieren ist kein API-Key nötig.
+
+## Wortmarke im Footer
+
+`src/components/site/WordmarkFooter.tsx` hängt unten an allen Inhaltsseiten
+(`/platform`, `/platform/about`, `/platform/api/docs`, `/docs`, `/pricing`) und über
+`src/app/platform/dash/layout.tsx` an **jeder** Dashboard-Seite.
+
+Die Marke „usehuman.de“ ist eine reine **Kontur** (`-webkit-text-stroke`), über die volle
+Breite. Berührt man sie mit der Maus, öffnet sich rund um den Zeiger eine
+**Verlaufs-Füllung** und folgt der Bewegung. Drei Textebenen liegen exakt übereinander
+(Kontur / Füllung / Lichtstreifen); die Zeigerposition wird als CSS-Variablen direkt am
+Element gesetzt — **kein Re-Render pro Mausbewegung**. Im Ruhezustand wandert langsam ein
+dünner Lichtstreifen durch die Kontur, `prefers-reduced-motion` schaltet ihn ab.
+
+Die Größe kommt aus `15.4cqw` (Container-Queries, Fallback `15.4vw`), damit die Marke
+sowohl über die ganze Seite läuft als auch neben der Dashboard-Sidebar passt. Gemessen
+deckt die Tinte **96 %** ihres Containers ab, es gibt keinen horizontalen Überlauf und
+unter der Tinte bleiben 21 px Luft (kein Clipping durch `overflow-hidden`).
+
+Der komplette Style inkl. Regeln und Prüfschritten steht als Skill unter
+`.agents/skills/human-ai-visual-style/SKILL.md` — neue Seiten bekommen damit denselben Look.
 
 ## Sicherheit
 

@@ -9,9 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@lottiefiles/dotlottie-react": "^0.20.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.0",
     "chess.js": "^1.4.0",
+    "e2b": "^2.56.0",
     "framer-motion": "^13.4.6",
     "lucide-react": "^0.441.0",
     "next": "^14.2.13",
@@ -20,7 +22,9 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
     "remark-gfm": "^4.0.0",
-    "screenshot-desktop": "^1.15.6"
+    "resend": "^6.33.0",
+    "screenshot-desktop": "^1.15.6",
+    "stripe": "^23.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.16.0",

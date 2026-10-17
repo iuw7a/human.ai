@@ -32,7 +32,8 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "slug, name and provider_model_id required." }, { status: 400 });
     }
     const slug = b.slug.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 48);
-    const provider = b.provider === "groq" ? "groq" : b.provider === "ifm" ? "ifm" : "nvidia";
+    const allowed = new Set(["nvidia", "groq", "ifm", "agnes", "kira", "codecraft", "bynara", "openrouter", "ollama", "xkiro", "gateway"]);
+    const provider = allowed.has(b.provider ?? "") ? (b.provider as string) : "nvidia";
     const admin = createAdminSupabase();
     const { error } = await admin.from("admin_models").insert({
       slug,
@@ -68,8 +69,9 @@ export async function PUT(req: NextRequest) {
     const patch: Record<string, unknown> = {};
     if (b.name !== undefined) patch.name = b.name.slice(0, 80);
     if (b.provider !== undefined) {
-      if (b.provider !== "nvidia" && b.provider !== "groq" && b.provider !== "ifm") {
-        return Response.json({ error: "provider must be nvidia, groq or ifm." }, { status: 400 });
+      const allowed = new Set(["nvidia", "groq", "ifm", "agnes", "kira", "codecraft", "bynara", "openrouter", "ollama", "xkiro", "gateway"]);
+      if (!allowed.has(b.provider)) {
+        return Response.json({ error: "provider must be nvidia, groq, ifm, agnes, kira, codecraft, bynara, openrouter, ollama, xkiro or gateway." }, { status: 400 });
       }
       patch.provider = b.provider;
     }

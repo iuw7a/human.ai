@@ -8,7 +8,21 @@ type CookieToSet = {
   options?: Parameters<NextResponse["cookies"]["set"]>[2];
 };
 
-const PUBLIC_PREFIXES = ["/maintenance", "/banned", "/login", "/logout", "/terms", "/platform/about"];
+const PUBLIC_PREFIXES = [
+  "/maintenance",
+  "/banned",
+  "/login",
+  "/logout",
+  "/terms",
+  "/platform/about",
+  // Stripe calls this directly (signature-verified). It must survive
+  // maintenance mode and must not depend on a logged-in session.
+  "/api/stripe/webhook",
+];
+
+function isAdminRole(role: string | null | undefined) {
+  return role === "admin" || role === "super_admin";
+}
 
 // ---- Speed: tiny in-memory caches (per server instance) ----
 // The middleware runs on EVERY request (pages, APIs, static-adjacent).
@@ -67,10 +81,6 @@ async function getProfileRole(userId: string): Promise<{ role: string | null; st
   } catch {
     return { role: null, status: "active" };
   }
-}
-
-function isAdminRole(role: string | null | undefined) {
-  return role === "admin" || role === "super_admin";
 }
 
 export async function updateSession(request: NextRequest) {

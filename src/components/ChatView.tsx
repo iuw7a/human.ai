@@ -5,21 +5,21 @@ import { useRouter } from "next/navigation";
 import { Check, Globe, MoreHorizontal, Plug, Wrench, X, Bot, Monitor, Square, AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
 import type { PendingImage } from "./ChatInput";
 import { createClient } from "@/lib/supabase/client";
-import { getModel } from "@/lib/models";
+import { getModel, DEFAULT_MODEL_ID, type ModelConfig } from "@/lib/models";
+import { getModels } from "@/lib/subscriptionClient";
 import type { ChatMode } from "./ModeSelector";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { DynamicIsland } from "./ai/DynamicIsland";
 import { MascotAvatar } from "./ai/MascotAvatar";
 import { BotAvatar } from "./BotAvatar";
 import { Composer } from "./ai/Composer";
+import { ImagineTemplates } from "./imagine/ImagineTemplates";
+import { IMAGE_MODEL_ID, looksLikeImageRequest } from "@/lib/model-intent";
 import { PlanBadge } from "./PlanBadge";
 import { UserMessage, AssistantMessage, ThinkingRow, type SpeakState } from "./ai/Message";
 import { MessageList } from "./ai/MessageList";
 import { useVoice } from "./ai/useVoice";
 import type { AIStatus } from "./ai/types";
-import { CallInterface } from "./humi/CallInterface";
-import type { CallExchange, CallTransport } from "./humi/useVoiceCall";
-import { readChatStream } from "./humi/useVoiceCall";
 
 export interface StoredMessage {
   id?: string;
@@ -330,15 +330,26 @@ function ModeActivityCard({
 export function ChatView({
   chatId,
   modelId,
+  lockModel = false,
+  showTemplates = false,
+  initialGoal = "",
+  initialMode,
   user,
   initialMessages,
   pendingKey,
+  isNewChat,
 }: {
   chatId: string;
   modelId: string;
+  lockModel?: boolean;
+  showTemplates?: boolean;
+  initialGoal?: string;
+  initialMode?: string | null;
   user: SupabaseUser | null;
   initialMessages: StoredMessage[];
   pendingKey?: string;
+  /** /chat/new: flip the URL to /chat/[id] on first send (no remount). */
+  isNewChat?: boolean;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<StoredMessage[]>(initialMessages);
@@ -355,6 +366,24 @@ export function ChatView({
   // ONE conversation, three execution modes. Mode only changes HOW a message is handled.
   const [mode, setMode] = useState<ChatMode>("chat");
   const modeRef = useRef<ChatMode>("chat");
+  // Web-search toggle (composer Globe button). On by default, remembered per browser.
+  const [searchOn, setSearchOn] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("humanai-search") !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const searchOnRef = useRef(searchOn);
+  searchOnRef.current = searchOn;
+  function changeSearch(next: boolean) {
+    setSearchOn(next);
+    try {
+      localStorage.setItem("humanai-search", next ? "on" : "off");
+    } catch {
+      // ignore
+    }
+  }
   const [activity, setActivity] = useState<ModeActivity | null>(null);
   const sendingRef = useRef(false);
   const stopRef = useRef(false);
@@ -377,48 +406,117 @@ export function ChatView({
   // Voice (real browser STT/TTS) + dictated text injection into the composer.
   const [voiceText, setVoiceText] = useState("");
   const voice = useVoice({ onTranscript: (t) => setVoiceText((prev) => (prev ? `${prev} ${t}` : t)) });
+  // "Humi Auto": the pill is locked, so the draft decides chat vs. image.
+  const [draft, setDraft] = useState("");
+  // Set when a template card is tapped — forces image mode for that prompt.
+  const [templatePick, setTemplatePick] = useState(false);
+  // Prompt handed to the composer when a template card is tapped.
+  const [seedText, setSeedText] = useState("");
+  useEffect(() => {
+    if (!draft.trim()) setTemplatePick(false);
+  }, [draft]);
   // Brief "completed" flash on the island after each finished turn.
   const [completedFlash, setCompletedFlash] = useState(false);
   const prevSendingRef = useRef(false);
-  // Live voice call overlay. Mirrored in the URL (?call=1) so the call
-  // has its own link state while staying on this exact page.
-  const [callOpen, setCallOpen] = useState(() => {
-    try {
-      return new URLSearchParams(window.location.search).get("call") === "1";
-    } catch {
-      return false;
-    }
-  });
-  const [callMicOk] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      (("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window)) &&
-      !!navigator.mediaDevices?.getUserMedia
-  );
 
   const changeMode = useCallback((m: ChatMode) => {
     modeRef.current = m;
     setMode(m);
   }, []);
 
+  const startNewChat = useCallback(() => {
+    router.push("/chat/new");
+  }, [router]);
+  // /chat/new → /chat/[id] flip (once): URL only, no remount, stream survives.
+  const promotedRef = useRef(false);
+  function promoteNewChatUrl() {
+    if (!isNewChat || promotedRef.current) return;
+    promotedRef.current = true;
+    try {
+      window.history.replaceState(null, "", `/chat/${chatId}`);
+    } catch {
+      // ignore
+    }
+  }
+
   // Subscription-aware model switching (persisted to the chat row; server re-verifies).
   const [activeModelId, setActiveModelId] = useState(modelId);
   useEffect(() => setActiveModelId(modelId), [modelId]);
-  const modelIdRef = useRef(modelId);
-  modelIdRef.current = activeModelId;
+  // "Humi Auto": the pill is locked, so the prompt — not the user — picks the
+  // model. The check lives in src/lib/model-intent.ts and is the same one the
+  // chat route uses when a client literally asks for "auto".
+  const imageIntent =
+    templatePick || looksLikeImageRequest(draft) || activeModelId === IMAGE_MODEL_ID;
+  const baseModelId = activeModelId === IMAGE_MODEL_ID ? DEFAULT_MODEL_ID : activeModelId;
+
+  // DB/gateway models (admin-added) are unknown to the code registry —
+  // resolve against the server list too. Server re-verifies on every send.
+  const [apiModelIds, setApiModelIds] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    getModels()
+      .then((ms) => setApiModelIds(new Set(ms.map((m) => m.id))))
+      .catch(() => setApiModelIds(new Set()));
+  }, []);
+  // Migrate any chat that still references a removed/disabled model to the
+  // default, so the user never sees "model not available".
+  useEffect(() => {
+    if (apiModelIds === null) return;
+    if (activeModelId === DEFAULT_MODEL_ID || activeModelId === IMAGE_MODEL_ID) return;
+    const known =
+      !!getModel(activeModelId) || (apiModelIds !== null && apiModelIds.has(activeModelId));
+    if (!known) void changeModel(DEFAULT_MODEL_ID);
+  }, [apiModelIds, activeModelId]);
+  const knownModel = getModel(baseModelId) || (apiModelIds === null || (apiModelIds && apiModelIds.has(baseModelId)));
+  const effectiveModelId = imageIntent
+    ? IMAGE_MODEL_ID
+    : knownModel
+      ? baseModelId
+      : DEFAULT_MODEL_ID;
+  const modelIdRef = useRef(effectiveModelId);
+  modelIdRef.current = effectiveModelId;
   async function changeModel(next: string) {
     setActiveModelId(next);
+    // The image model is an intent, not a preference: never store it as the
+    // "last picked" model, so a new chat does not start in image mode.
+    if (next === IMAGE_MODEL_ID) return;
+    try {
+      localStorage.setItem("humanai-model", next);
+    } catch {
+      // ignore
+    }
     if (!user) return;
     try {
       const supabase = createClient();
+      // Best-effort persistence only — deliberately no router.refresh():
+      // a refresh re-renders the server page and can resync a stale
+      // default back over the just-picked model.
       await supabase.from("chats").update({ model_id: next }).eq("id", chatId);
     } catch {
       // persistence best effort — next send still uses the selected model
     }
-    router.refresh();
   }
 
-  const model = getModel(activeModelId);
+  // New chats start with the user's last-picked model (choice sticks).
+  useEffect(() => {
+    if (lockModel) return;
+    if (!isNewChat) return;
+    try {
+      const last = localStorage.getItem("humanai-model");
+      if (last) setActiveModelId(last);
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNewChat]);
+
+  const codeModel = getModel(activeModelId);
+  // Graceful fallback: if the stored model is no longer available (disabled
+  // or removed), use the default chat model instead of blocking the chat.
+  const model: ModelConfig | { id: string } | null =
+    codeModel ??
+    (apiModelIds === null || apiModelIds.has(activeModelId)
+      ? { id: activeModelId }
+      : getModel(DEFAULT_MODEL_ID));
   const title =
     messages.find((m) => m.role === "user")?.content.slice(0, 40) || "Human AI";
 
@@ -578,7 +676,6 @@ export function ChatView({
       text,
       uploaded.map((u) => ({ url: u.storagePath ?? "", storagePath: u.storagePath }))
     ).catch(() => {});
-    router.refresh();
     return { history, uploaded };
   }
 
@@ -600,6 +697,7 @@ export function ChatView({
 
     try {
       const { history, uploaded } = await prepareUserMessage(text, pendingImages);
+      promoteNewChatUrl();
       if (m === "agent") {
         await runAgentTask(history, text, uploaded.length);
       } else if (m === "computer-use") {
@@ -650,7 +748,7 @@ export function ChatView({
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ modelId: modelIdRef.current, messages: apiMessages }),
+      body: JSON.stringify({ modelId: modelIdRef.current, messages: apiMessages, searchEnabled: searchOnRef.current }),
       signal,
     });
     if (!res.ok || !res.body) {
@@ -698,7 +796,6 @@ export function ChatView({
     setMessages([...history, { role: "assistant", content: full }]);
     setStreamed("");
     await persist("assistant", full);
-    router.refresh();
   }
 
   /** Conversation context so follow-up tasks reuse what was already discussed/done. */
@@ -969,32 +1066,59 @@ export function ChatView({
           const m = validMode(pending.mode) ? pending.mode : "chat";
           changeMode(m);
           void send(pending.text ?? "", pending.images ?? [], m);
+          return;
         }
       }
     } catch {
       // no pending message — show empty state
     }
+    // Entry-point params (?goal=&mode=), e.g. from / or /chat/new links.
+    try {
+      let goal = (initialGoal ?? "").slice(0, 2000);
+      let modeVal = initialMode;
+      // Fallback: landing stores the prompt in sessionStorage (searchParams
+      // is not reliably populated for this route in dev).
+      if (!goal.trim()) {
+        try {
+          const stored = sessionStorage.getItem("humanai-goal");
+          if (stored) {
+            goal = stored.slice(0, 2000);
+            sessionStorage.removeItem("humanai-goal");
+          }
+        } catch {
+          // ignore
+        }
+      }
+      const m = validMode(modeVal) ? (modeVal as ChatMode) : "chat";
+      if (goal.trim()) {
+        changeMode(m);
+        void send(goal, [], m);
+      } else if (m !== "chat") {
+        changeMode(m);
+      }
+    } catch {
+      // ignore
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [booted, pendingKey]);
-
-  if (!model) {
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-24 text-center">
-        <h1 className="text-xl font-semibold text-white">Unknown model</h1>
-        <p className="mt-2 text-sm text-zinc-400">
-          The model “{activeModelId}” is not available on Human AI.
-        </p>
-      </div>
-    );
-  }
+  }, [booted, pendingKey, initialGoal, initialMode]);
 
   // Stable identities so memoized children (messages, composer) skip
   // re-renders while tokens stream in. The send logic itself is untouched.
+  // NOTE: every hook in this component must stay above the `if (!model)`
+  // early return below — otherwise React throws "rendered fewer hooks
+  // than expected" whenever the model resolves asynchronously.
   const sendRef = useRef(send);
   sendRef.current = send;
+  // A chat starts empty; the first send makes the bar drop to the bottom.
+  const empty = messages.length === 0 && !streamed && !sending;
+  const emptyRef = useRef(empty);
+  emptyRef.current = empty;
+  const [dropIn, setDropIn] = useState(false);
   const stableSend = useCallback(
-    (text: string, images: PendingImage[], modeOverride?: ChatMode) =>
-      sendRef.current(text, images, modeOverride),
+    (text: string, images: PendingImage[], modeOverride?: ChatMode) => {
+      if (emptyRef.current) setDropIn(true);
+      sendRef.current(text, images, modeOverride);
+    },
     []
   );
   const voiceRef = useRef(voice);
@@ -1010,66 +1134,13 @@ export function ChatView({
     else v.startListening();
   }, []);
   const clearVoiceText = useCallback(() => setVoiceText(""), []);
-
-  function syncCallParam(open: boolean) {
-    try {
-      const url = new URL(window.location.href);
-      if (open) url.searchParams.set("call", "1");
-      else url.searchParams.delete("call");
-      window.history.replaceState(null, "", url.toString());
-    } catch {
-      // ignore
-    }
-  }
-
-  const activityRef = useRef(activity);
-  activityRef.current = activity;
-
-  const openCall = useCallback(() => {
-    if (sendingRef.current || activityRef.current) return;
-    const v = voiceRef.current;
-    if (v.listening) v.stopListening();
-    if (v.speaking) v.stopSpeaking();
-    setError(null);
-    setCallOpen(true);
-    syncCallParam(true);
+  // A tapped template fills the composer and forces image mode for that prompt.
+  const pickTemplate = useCallback((prompt: string) => {
+    setTemplatePick(true);
+    setSeedText(prompt);
   }, []);
+  const clearSeedText = useCallback(() => setSeedText(""), []);
 
-  const closeCall = useCallback(() => {
-    setCallOpen(false);
-    syncCallParam(false);
-  }, []);
-
-  // Voice call runs in the CURRENT conversation thread, same page.
-  const callTransport: CallTransport = useMemo(
-    () => ({
-      startSession: async () => chatId,
-      streamReply: async (_chatId, history, onToken, signal) => {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            modelId: modelIdRef.current,
-            messages: history.slice(-30).map((m) => ({ role: m.role, content: m.content })),
-          }),
-          signal,
-        });
-        return readChatStream(res, onToken);
-      },
-    }),
-    [chatId]
-  );
-
-  const handleCallExchange = useCallback(
-    (ex: CallExchange) => {
-      setMessages((prev) => [...prev, { role: "user", content: ex.userText }, { role: "assistant", content: ex.assistantText }]);
-      void persist("user", ex.userText, []).catch(() => {});
-      void persist("assistant", ex.assistantText, []).catch(() => {});
-      router.refresh();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
   const voiceProp = useMemo(
     () => ({ listening: voice.listening, supported: voice.sttSupported, onMic: micToggle }),
     [voice.listening, voice.sttSupported, micToggle]
@@ -1082,6 +1153,19 @@ export function ChatView({
     () => (flags.feedback !== false && user ? { chatId, modelId: activeModelId } : null),
     [flags.feedback, user, chatId, activeModelId]
   );
+
+  if (!model) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-24 text-center">
+        <h1 className="text-xl font-semibold text-white">Unknown model</h1>
+        <p className="mt-2 text-sm text-zinc-400">
+          The model “{activeModelId}” is not available on Human AI.
+        </p>
+      </div>
+    );
+  }
+
+  // (stable identities live above the `if (!model)` early return)
 
   // Real live activity only — never placeholder text.
   let liveLine: string | undefined;
@@ -1097,18 +1181,18 @@ export function ChatView({
     liveLine = "Done";
   }
 
-  const empty = messages.length === 0 && !streamed && !sending;
-  const { status: islandStatus, text: islandText } = aiStatus();
+  const { status: islandStatus } = aiStatus();
   const composerPlaceholder =
     mode === "agent"
       ? "Describe the task, e.g. Research this company and summarize it…"
       : mode === "computer-use"
         ? "Describe what to do on the computer, e.g. Open ChatGPT…"
-        : "Ask Human AI anything...";
+        : imageIntent
+          ? "Describe the image… or start from a template below"
+          : "Ask Human AI anything...";
 
   return (
     <div className="relative flex h-full flex-col bg-black">
-      <DynamicIsland status={islandStatus} text={islandText} />
       {/* Chat background at 100% — the image IS the backdrop. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         {bgOk && (
@@ -1122,15 +1206,17 @@ export function ChatView({
       </div>
 
       {empty ? (
-        <div className="no-scrollbar relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
+        <div className="no-scrollbar relative z-10 flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-8 sm:py-10">
           <div className="w-full max-w-2xl">
             <div className="flex flex-col items-center text-center">
-              <MascotAvatar status={islandStatus} size={120} />
+              <MascotAvatar status={islandStatus} size={imageIntent ? 84 : 120} />
               <h1 className="mt-6 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                How can I help you?
+                {imageIntent ? "What should I draw?" : "How can I help you?"}
               </h1>
               <p className="mt-3 max-w-md text-[15px] leading-6 text-zinc-400">
-                Ask anything. Attach an image to analyze it.
+                {imageIntent
+                  ? "Describe the image — or start from a template."
+                  : "Ask anything. Attach an image to analyze it."}
               </p>
             </div>
             <div className="mt-7">
@@ -1140,23 +1226,28 @@ export function ChatView({
                 onSend={stableSend}
                 sending={sending}
                 allowUpload={flags.image_generation !== false}
-                mode={mode}
-                onModeChange={changeMode}
-                modelId={activeModelId}
-                onModelChange={(id) => void changeModel(id)}
+                onNewChat={startNewChat}
                 voiceText={voiceText}
                 onVoiceTextConsumed={clearVoiceText}
+                seedText={seedText || undefined}
+                onSeedConsumed={clearSeedText}
+                onDraftChange={setDraft}
                 voice={voiceProp}
-                statusLine={liveLine}
                 placeholder={composerPlaceholder}
-                onCall={openCall}
-                callSupported={callMicOk}
+                searchEnabled={searchOn}
+                onSearchChange={changeSearch}
               />
             </div>
+            {showTemplates && <ImagineTemplates onPick={pickTemplate} />}
           </div>
         </div>
       ) : (
-        <>
+        <div
+          className={`flex min-h-0 flex-1 flex-col${dropIn ? " chat-drop" : ""}`}
+          onAnimationEnd={(e) => {
+            if (e.target === e.currentTarget) setDropIn(false);
+          }}
+        >
           <div className="relative z-10 flex items-center justify-between gap-2 px-4 py-3 sm:px-6">
             <p className="max-w-[40%] truncate pl-10 text-sm font-medium text-zinc-200 lg:pl-0">
               {title}
@@ -1187,6 +1278,7 @@ export function ChatView({
                   speak={speakState}
                   onToggleSpeak={toggleSpeak}
                   vote={voteMeta}
+                  onSwitchToImages={() => void changeModel("humi.1-images")}
                 />
               )
             )}
@@ -1240,32 +1332,20 @@ export function ChatView({
                 onSend={stableSend}
                 sending={sending}
                 allowUpload={flags.image_generation !== false}
-                mode={mode}
-                onModeChange={changeMode}
-                modelId={activeModelId}
-                onModelChange={(id) => void changeModel(id)}
+                onNewChat={startNewChat}
                 voiceText={voiceText}
                 onVoiceTextConsumed={clearVoiceText}
+                seedText={seedText || undefined}
+                onSeedConsumed={clearSeedText}
+                onDraftChange={setDraft}
                 voice={voiceProp}
-                statusLine={liveLine}
                 placeholder={composerPlaceholder}
-                onCall={openCall}
-                callSupported={callMicOk}
+                searchEnabled={searchOn}
+                onSearchChange={changeSearch}
               />
             </div>
           </div>
-        </>
-      )}
-      {callOpen && (
-        <CallInterface
-          title="Human AI"
-          avatarSrc="/humi.png"
-          transport={callTransport}
-          language=""
-          initialHistory={messages.slice(-30).map((m) => ({ role: m.role, content: m.content }))}
-          onExchange={handleCallExchange}
-          onClose={closeCall}
-        />
+        </div>
       )}
     </div>
   );

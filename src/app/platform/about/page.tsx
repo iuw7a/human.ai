@@ -1,4 +1,5 @@
 ﻿import { PlatformShell } from "@/components/platform/PlatformShell";
+import { WordmarkFooter } from "@/components/site/WordmarkFooter";
 import { Markdown } from "@/components/Markdown";
 import { getPublishedPage } from "@/lib/pages";
 
@@ -48,6 +49,7 @@ export default async function AboutPage() {
         </div>
         )}
       </div>
+      <WordmarkFooter />
     </PlatformShell>
   );
 }

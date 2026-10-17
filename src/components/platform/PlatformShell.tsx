@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
   LayoutGrid,
-  KeyRound,
+  LayoutDashboard,
   FileText,
   Info,
   Menu,
@@ -15,7 +15,7 @@ import { Logo } from "../Logo";
 
 const LINKS = [
   { href: "/platform", label: "Overview", icon: LayoutGrid },
-  { href: "/platform/api", label: "API Keys", icon: KeyRound },
+  { href: "/platform/dash", label: "Dashboard", icon: LayoutDashboard },
   { href: "/platform/api/docs", label: "Docs", icon: FileText },
   { href: "/platform/about", label: "About", icon: Info },
 ];
@@ -72,13 +72,6 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="flex h-screen overflow-hidden bg-black">
-      <button
-        className="btn-ghost fixed left-3 top-3 z-40 border border-ink-700 bg-ink-900 p-2 shadow-sm lg:hidden"
-        onClick={() => setOpen(true)}
-        aria-label="Open menu"
-      >
-        <Menu size={18} />
-      </button>
       <aside className="relative hidden w-60 shrink-0 border-r border-ink-800 lg:block">
         <span className="pointer-events-none absolute inset-y-0 left-0 z-10 w-[3px] bg-gradient-to-b from-accent via-accent to-accent-muted" />
         <PlatformNav />
@@ -99,6 +92,16 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
       <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <div className="flex items-center gap-2 border-b border-ink-800 bg-ink-900 px-3 py-2 lg:hidden">
+          <button
+            className="btn-ghost border border-ink-700 p-2"
+            onClick={() => setOpen(true)}
+            aria-label="Open menu"
+          >
+            <Menu size={18} />
+          </button>
+          <span className="text-[13px] font-medium text-zinc-400">Platform</span>
+        </div>
         <div className="min-h-0 flex-1">{children}</div>
       </main>
     </div>

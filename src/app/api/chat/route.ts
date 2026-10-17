@@ -1,14 +1,27 @@
 ﻿import { NextRequest } from "next/server";
 import { getModel } from "@/lib/models";
 import { HUMAN_AI_SYSTEM_PROMPT } from "@/lib/systemPrompt";
-import { createProviderFor, streamChatWithToolsFor } from "@/lib/providers/registry";
+import { createProviderForAsync, streamChatWithToolsFor, isGatewayProvider } from "@/lib/providers/registry";
 import { toOpenAIMessage, type OpenAIMessage, type ToolCallReq } from "@/lib/providers/nvidia";
-import { resolveDbModel, logAppError } from "@/lib/admin";
+import { resolveDbModel, logAppError, getAdmin, defaultDbModelSlug } from "@/lib/admin";
+import { looksLikeImageRequest, IMAGE_MODEL_ID, AUTO_MODEL_ID } from "@/lib/model-intent";
 import { getEffectiveSubscription, canAccessModel, upgradeMessage } from "@/lib/subscriptions";
 import { friendlyProviderError, permittedFallback } from "@/lib/ai-registry";
+import { listGrantsForUser } from "@/lib/model-grants";
+import { logModelUsage } from "@/lib/usage";
 import { connectedTools, executeTool } from "@/lib/mcp/catalog";
 import { isSearchEnabled, WEB_SEARCH_TOOL, webSearch } from "@/lib/search/serpapi";
 import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
+import { agnesGenerateImage, AGNES_IMAGE_MODEL } from "@/lib/agnes";
+import {
+  API_KEY_MODELS,
+  isApiKeyModel,
+  normalizeScopes,
+  requiredScopeForModel,
+  isMissingScopesColumn,
+  type ApiKeyScope,
+} from "@/lib/apiKeys";
+import { injectionRefusal, sseTextResponse } from "@/lib/injection";
 import type { ChatMessageInput } from "@/lib/providers/types";
 
 export const runtime = "nodejs";
@@ -49,7 +62,13 @@ function humiBlock(body: {
 /** Transient provider failures worth one retry (NVIDIA 5xx, timeouts, connection resets). */
 function isRetryableProviderError(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e ?? "");
-  return /NVIDIA API error 5\d\d|timeout|aborted|abort|TimeoutError|fetch failed|ECONN|EAI_AGAIN/i.test(msg);
+  return /NVIDIA API error 5\d\d|Gateway API error 5\d\d|timeout|aborted|abort|TimeoutError|fetch failed|ECONN|EAI_AGAIN/i.test(msg);
+}
+
+/** Rate-limit (429) — worth ONE delayed retry, then a friendly message. */
+function isRateLimitError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  return /API error 429|rate.?limit|429 Too Many/i.test(msg);
 }
 
 function sanitize(messages: BodyMessage[]): ChatMessageInput[] {  return messages
@@ -68,10 +87,31 @@ function sanitize(messages: BodyMessage[]): ChatMessageInput[] {  return message
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as { modelId?: string; messages?: BodyMessage[] };
-    const requestedSlug = body.modelId ?? "humi1.1-speed";
-    // DB-backed model resolution (falls back to code registry).
-    const dbModel = await resolveDbModel(requestedSlug);
+    const body = (await req.json()) as {
+      modelId?: string;
+      messages?: BodyMessage[];
+      searchEnabled?: unknown;
+    };
+    const messages = sanitize(body.messages ?? []);
+    if (messages.length === 0) {
+      return Response.json({ error: "No messages provided." }, { status: 400 });
+    }
+
+    // "auto" (the locked "Humi Auto" pill) resolves here, so the browser and
+    // the server can never disagree about which model runs. Explicit model IDs
+    // (incl. API keys) pass through unchanged.
+    const requestedSlug = body.modelId === AUTO_MODEL_ID
+      ? looksLikeImageRequest([...messages].reverse().find((m) => m.role === "user")?.content ?? "")
+        ? IMAGE_MODEL_ID
+        : await defaultDbModelSlug()
+      : (body.modelId ?? "humi1.1-speed");
+
+    // DB-backed model resolution + auth in parallel (faster first token).
+    const supabase = createServerSupabase();
+    const [dbModel, userRes] = await Promise.all([
+      resolveDbModel(requestedSlug),
+      supabase.auth.getUser().catch(() => ({ data: { user: null } as { user: null } })),
+    ]);
     const codeModel = getModel(requestedSlug);
     const resolved = dbModel ??
       (codeModel
@@ -83,28 +123,46 @@ export async function POST(req: NextRequest) {
     if (!resolved.enabled) {
       return Response.json({ error: "This model is currently disabled." }, { status: 403 });
     }
-    const messages = sanitize(body.messages ?? []);
-    if (messages.length === 0) {
-      return Response.json({ error: "No messages provided." }, { status: 400 });
-    }
-
+    // `messages` already sanitized above (needed to resolve "auto").
     // Auth: Supabase session OR app API key (x-api-key header).
-    const supabase = createServerSupabase();
     const {
       data: { user: sessionUser },
-    } = await supabase.auth.getUser();
+    } = (userRes as { data: { user: { id: string } | null } });
     let apiUserId: string | null = null;
+    let keyScopes: ApiKeyScope[] = ["chat", "images"];
     const apiKey = req.headers.get("x-api-key");
     if (!sessionUser && apiKey) {
       const hex = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey)))]
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
       const admin = createAdminSupabase();
-      const { data: key } = await admin.from("api_keys").select("id,user_id,enabled").eq("key_hash", hex).single();
+      const attempt = await admin
+        .from("api_keys")
+        .select("id,user_id,enabled,scopes")
+        .eq("key_hash", hex)
+        .single();
+      let key: { id: string; user_id: string; enabled: boolean; scopes?: unknown } | null =
+        attempt.data;
+      if (attempt.error) {
+        if (!isMissingScopesColumn(attempt.error)) {
+          return Response.json({ error: "Invalid API key." }, { status: 401 });
+        }
+        // scopes column missing (migration pending) — key works with full access.
+        const fb = await admin
+          .from("api_keys")
+          .select("id,user_id,enabled")
+          .eq("key_hash", hex)
+          .single();
+        if (fb.error || !fb.data) {
+          return Response.json({ error: "Invalid API key." }, { status: 401 });
+        }
+        key = fb.data;
+      }
       if (!key || !key.enabled) {
         return Response.json({ error: "Invalid API key." }, { status: 401 });
       }
       apiUserId = key.user_id;
+      keyScopes = normalizeScopes(key.scopes);
       const { data: cur } = await admin.from("api_keys").select("usage_count").eq("id", key.id).single();
       await admin.from("api_keys").update({
         usage_count: (cur?.usage_count ?? 0) + 1,
@@ -129,15 +187,153 @@ export async function POST(req: NextRequest) {
             : "light",
     };
     if (!canAccessModel(sub, normalizedModel)) {
-      return Response.json(
-        {
-          error: upgradeMessage(String(normalizedModel.access_level)),
-          upgrade: true,
-          requiredAccess: normalizedModel.access_level,
-          plan: sub.plan,
+      // Via-admin grant overrides plan gates (explicit per-user access).
+      let granted = false;
+      if (effectiveUserId) {
+        try {
+          const grants = await listGrantsForUser(effectiveUserId);
+          granted = grants.includes(requestedSlug);
+        } catch {
+          granted = false;
+        }
+      }
+      // Super admins (admin/super_admin) may chat on every enabled model.
+      if (!granted) {
+        try {
+          granted = (await getAdmin()) !== null;
+        } catch {
+          granted = false;
+        }
+      }
+      if (!granted) {
+        return Response.json(
+          {
+            error: upgradeMessage(String(normalizedModel.access_level)),
+            upgrade: true,
+            requiredAccess: normalizedModel.access_level,
+            plan: sub.plan,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Non-CodeCraft gateways are grant/admin-only: a Plus plan alone
+    // never unlocks kira/bynara/openrouter/... — only your explicit grant does.
+    {
+      const gw = (resolved as { provider?: unknown }).provider;
+      if (typeof gw === "string" && isGatewayProvider(gw) && gw !== "codecraft") {
+        let ok = false;
+        if (effectiveUserId) {
+          try {
+            ok = (await listGrantsForUser(effectiveUserId)).includes(requestedSlug);
+          } catch {
+            ok = false;
+          }
+        }
+        if (!ok) {
+          try {
+            ok = (await getAdmin()) !== null;
+          } catch {
+            ok = false;
+          }
+        }
+        if (!ok) {
+          return Response.json(
+            {
+              error: "This model is admin-assigned only. Ask an administrator for access.",
+              upgrade: true,
+              requiredAccess: normalizedModel.access_level,
+              plan: sub.plan,
+            },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
+    // API keys are pinned to the two curated models (Speed + humi.1 images),
+    // and each key only covers its scopes (chat and/or images).
+    // Browser sessions are unaffected (legacy chats keep resolving).
+    if (apiUserId) {
+      if (!isApiKeyModel(requestedSlug)) {
+        return Response.json(
+          {
+            error: `API keys support only ${API_KEY_MODELS.join(" and ")}.`,
+          },
+          { status: 403 }
+        );
+      }
+      const need = requiredScopeForModel(resolved);
+      if (!keyScopes.includes(need)) {
+        return Response.json(
+          {
+            error:
+              need === "images"
+                ? "This API key is chat-only. Create an images key to generate images."
+                : "This API key is images-only. Create a chat key for text models.",
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Prompt-injection tripwire (deterministic, before any provider call):
+    // extraction demands, instruction overrides, jailbreaks and false
+    // "ich bin der dev" authority claims get a canned refusal — the model
+    // never sees them, so nothing internal can leak. Covers both models.
+    const tripwireText =
+      [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+    const tripwireHit = injectionRefusal(tripwireText);
+    if (tripwireHit) {
+      return sseTextResponse(tripwireHit);
+    }
+
+    // Image model (humi.1 images): text-to-image via Agnes, same SSE contract.
+    // Prompt = last user message. Returns markdown with the image.
+    if ((resolved as { provider?: unknown }).provider === "agnes") {
+      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+      const prompt = (lastUserMsg?.content ?? "").trim().slice(0, 2000);
+      const encoder = new TextEncoder();
+      if (!prompt) {
+        return Response.json({ error: "Describe the image first." }, { status: 400 });
+      }
+      const stream = new ReadableStream({
+        async start(controller) {
+          const send = (data: string) =>
+            controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+          try {
+            const out = await agnesGenerateImage({
+              prompt,
+              size: "1024x1024",
+              model: (resolved as { providerModelId?: string }).providerModelId || AGNES_IMAGE_MODEL,
+            });
+            const displayName =
+              (resolved as { name?: string }).name || "humi.1 images";
+            const md =
+              `![${prompt.slice(0, 120)}](${out.url})\n\n` +
+              `*Generated with ${displayName}*`;
+            // Stream in chunks so the UI typing effect still works.
+            for (let i = 0; i < md.length; i += 200) {
+              send(JSON.stringify({ token: md.slice(i, i + 200) }));
+            }
+            send("[DONE]");
+          } catch (e) {
+            const raw = e instanceof Error ? e.message : "Image generation failed.";
+            void logAppError("api/chat image", raw, { model: (resolved as { id?: string }).id });
+            send(JSON.stringify({ error: raw.slice(0, 500) }));
+          } finally {
+            controller.close();
+          }
         },
-        { status: 403 }
-      );
+      });
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
     }
 
     // Identity: the full Human AI master system prompt,
@@ -179,7 +375,9 @@ export async function POST(req: NextRequest) {
       ...messages,
     ];
 
-    const provider = createProviderFor(resolved.provider, resolved.providerModelId);
+    const { provider, gatewayKey } = await createProviderForAsync(resolved.provider, resolved.providerModelId);
+    const usageGateway = gatewayKey ?? (resolved.provider as string);
+    const promptEstimate = Math.ceil(messages.reduce((s, m) => s + (m.content?.length ?? 0), 0) / 4);
 
     // MCP tools available to THIS user (their connections only).
     const mcpByOpenName = new Map<string, { serverId: string; serverName: string; tool: string }>();
@@ -209,22 +407,38 @@ export async function POST(req: NextRequest) {
       systemContent += `\n\nCONNECTED MCP SERVERS for this user: ${mcpServerNames}. Only call a function when the user explicitly needs live or external data from these servers (prices, records, docs, lookups). For greetings, smalltalk, explanations, and anything answerable from knowledge or chat history, answer directly WITHOUT calling tools. Never call a tool just to acknowledge a message. After any tool result: NEVER narrate or mention the function call, tool name, query, or result count — use the results silently and answer the user's question directly. If results are irrelevant, say briefly that you found nothing useful and answer from knowledge or ask for clarification.`;
     }
 
+    // Image-capability questions (tolerant of typos like "bidler") are answered
+    // directly from the system prompt — the web_search tool is not even offered.
+    const earlyLastUser = [...messages].reverse().find((m) => m.role === "user");
+    const earlyLastText = (earlyLastUser?.content ?? "").trim();
+    const earlyLastHasImages = (earlyLastUser?.images ?? []).length > 0;
+    const IS_IMAGE_QUESTION =
+      !earlyLastHasImages &&
+      /(b[i!][ld]+er|bild|image|picture|photo|zeichnung|gem[aä]lde|صور|صورة)/i.test(
+        earlyLastText
+      );
+
     // Built-in live web search (server key) — works for everyone, no setup needed.
-    const searchOn = isSearchEnabled();
-    if (searchOn) {
+    // The composer toggle (searchEnabled) lets the user switch it off per chat.
+    const searchOn =
+      isSearchEnabled() && body.searchEnabled !== false;
+    if (searchOn && !IS_IMAGE_QUESTION) {
       mcpTools.push({ ...WEB_SEARCH_TOOL });
       systemContent += `\n\nYou also have a built-in web_search function. Use it whenever the user asks about recent events, current data, prices, documentation, or anything that may be newer than your training data. Always cite the source URLs in your answer. NEVER describe the search itself (no "the function was called", no queries, no result counts) — just answer with the findings. If results are irrelevant, say briefly that nothing useful was found instead of summarizing junk results.`;
     }
 
     // Smalltalk fast path: greetings and one-liners never need tools.
     // Stops trigger-happy tool calls ("yo" → search_docs → failure essay).
+    // Covers DE + EN + AR greetings (مرحبا must never trigger a web search).
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     const lastText = (lastUser?.content ?? "").trim();
     const lastHasImages = (lastUser?.images ?? []).length > 0;
     const SMALLTALK =
-      /^(yo|hi+|hey+|hallo+|hello+|servus|moin|na+|ok|okay+|danke\w*|thanks?|bitte|ja|nein|yes|no+|was\s+ist\s+das\??|wer\s+bist\s+du\??|was\s+bist\s+du\??|welche[snm]?\s+(model|modell)\b[^!?.…]{0,30}|(what|which)\s+model\b[^!?.…]{0,30}|who\s+are\s+you[^!?.…]{0,20}|what\s+are\s+you[^!?.…]{0,20}|wie\s+geht'?s\??)\s*[!?.…]*$/i;
+      /^(yo|hi+|hey+|hallo+|hello+|servus|moin|na+|ok|okay+|danke\w*|thanks?|thank\s+you|bitte|gerne|ja|nein|yes|no+|was\s+ist\s+das\??|wer\s+bist\s+du\??|was\s+bist\s+du\??|welche[snm]?\s+(model|modell)\b[^!?.…]{0,30}|(what|which)\s+model\b[^!?.…]{0,30}|who\s+are\s+you[^!?.…]{0,20}|what\s+are\s+you[^!?.…]{0,20}|wie\s+geht'?s\??|مرحب[ااً]?|هلا+|اهلا|أهلا|سهلا|السلام عليكم|عليكم السلام|صباح الخير|مساء الخير|شلونك|شلونج|كيفك|كيف حالك|شخبارك|شو اخبارك|تمام|زين|ماشي|طيب|نعم|اي|لا|شكرا|ممنون|ممنونة|تسلم|تسلمين|عاشت ايدك|عفوا|مع السلامة|باي)\s*[!?.…؟]*$/i;
+    // Image-capability questions must be answered directly — never via tools.
     const skipTools =
-      mcpTools.length > 0 && !lastHasImages && lastText.length <= 60 && SMALLTALK.test(lastText);
+      (mcpTools.length > 0 && !lastHasImages && lastText.length <= 60 && SMALLTALK.test(lastText)) ||
+      IS_IMAGE_QUESTION;
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -233,10 +447,32 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
         try {
           if (mcpTools.length === 0 || skipTools) {
-            await provider.stream(withIdentity, {
-              onToken: (token) => send(JSON.stringify({ token })),
-            });
+            // Fast path: no tools. 429s get one delayed retry (providers
+            // throw before streaming any token, so retrying never duplicates).
+            for (let attempt = 0; ; attempt++) {
+              try {
+                await provider.stream(withIdentity, {
+                  onToken: (token) => send(JSON.stringify({ token })),
+                });
+                break;
+              } catch (e) {
+                if (attempt === 0 && isRateLimitError(e)) {
+                  await new Promise((r) => setTimeout(r, 5000));
+                  continue;
+                }
+                throw e;
+              }
+            }
             send("[DONE]");
+            void logModelUsage({
+              user_id: effectiveUserId,
+              model_slug: requestedSlug,
+              gateway_key: usageGateway,
+              source: apiUserId ? "api_key" : "chat",
+              prompt_tokens: promptEstimate,
+              total_tokens: promptEstimate,
+              success: true,
+            });
             return;
           }
 
@@ -378,6 +614,15 @@ export async function POST(req: NextRequest) {
             }
           }
           send("[DONE]");
+          void logModelUsage({
+            user_id: effectiveUserId,
+            model_slug: requestedSlug,
+            gateway_key: usageGateway,
+              source: apiUserId ? "api_key" : "chat",
+            prompt_tokens: promptEstimate,
+            total_tokens: promptEstimate,
+            success: true,
+          });
         } catch (e) {
           const raw = e instanceof Error ? e.message : "Generation failed.";
           // Permitted fallback only: retry once on an allowed model when the
@@ -398,6 +643,15 @@ export async function POST(req: NextRequest) {
           }
           const friendly = friendlyProviderError(raw);
           void logAppError("api/chat", raw, { model: (resolved as { id?: string }).id });
+          void logModelUsage({
+            user_id: effectiveUserId,
+            model_slug: requestedSlug,
+            gateway_key: usageGateway,
+              source: apiUserId ? "api_key" : "chat",
+            prompt_tokens: promptEstimate,
+            success: false,
+            error: raw,
+          });
           send(JSON.stringify({ error: friendly }));
         } finally {
           controller.close();

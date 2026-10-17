@@ -1,5 +1,6 @@
 import { listDbModels, type DbModel } from "./admin";
 import { getEffectiveSubscription, canAccessModel, type EffectiveSubscription } from "./subscriptions";
+import { listGatewaysMasked, probeGateway } from "./gateways";
 
 /**
  * Centralized server-side AI provider/model registry.
@@ -8,7 +9,7 @@ import { getEffectiveSubscription, canAccessModel, type EffectiveSubscription } 
  */
 
 export interface ProviderInfo {
-  key: "nvidia" | "groq" | "ifm";
+  key: string;
   label: string;
   configured: boolean;
   baseUrl: string;
@@ -23,19 +24,26 @@ export interface RegistryModel extends DbModel {
   allowedPlans: string[];
 }
 
-function baseUrlFor(key: "nvidia" | "groq" | "ifm"): string {
+function baseUrlFor(key: "nvidia" | "groq" | "ifm" | "agnes"): string {
   if (key === "groq") return process.env.GROQ_BASE_URL ?? "https://api.groq.com/openai/v1";
   if (key === "ifm") return process.env.IFM_BASE_URL ?? "https://api.ifm.ai/v1";
+  if (key === "agnes") return process.env.AGNES_BASE_URL ?? "https://apihub.agnes-ai.com/v1";
   return process.env.NVIDIA_BASE_URL ?? "https://integrate.api.nvidia.com/v1";
 }
 
-function keyConfigured(key: "nvidia" | "groq" | "ifm"): boolean {
+function keyConfigured(key: "nvidia" | "groq" | "ifm" | "agnes"): boolean {
   if (key === "groq") return !!process.env.GROQ_API_KEY;
   if (key === "ifm") return !!process.env.IFM_API_KEY;
+  if (key === "agnes") return !!process.env.AGNES_API_KEY;
   return !!process.env.NVIDIA_API_KEY;
 }
 
-async function probeProvider(key: "nvidia" | "groq" | "ifm"): Promise<{ reachable: boolean | null; detail: string }> {
+async function probeProvider(key: "nvidia" | "groq" | "ifm" | "agnes"): Promise<{ reachable: boolean | null; detail: string }> {
+  if (key === "agnes") {
+    return process.env.AGNES_API_KEY
+      ? { reachable: null, detail: "key set, image generation" }
+      : { reachable: false, detail: "AGNES_API_KEY not configured" };
+  }
   const apiKey =
     key === "groq" ? process.env.GROQ_API_KEY
     : key === "ifm" ? process.env.IFM_API_KEY
@@ -60,7 +68,7 @@ async function probeProvider(key: "nvidia" | "groq" | "ifm"): Promise<{ reachabl
 export async function listProviders(checkLive = false): Promise<ProviderInfo[]> {
   const models = await listDbModels().catch(() => []);
   const out: ProviderInfo[] = [];
-  for (const key of ["nvidia", "groq", "ifm"] as const) {
+  for (const key of ["nvidia", "groq", "ifm", "agnes"] as const) {
     let reachable: boolean | null = null;
     let detail = keyConfigured(key) ? "key configured" : "API key not configured";
     if (checkLive) {
@@ -70,13 +78,44 @@ export async function listProviders(checkLive = false): Promise<ProviderInfo[]> 
     }
     out.push({
       key,
-      label: key === "nvidia" ? "NVIDIA" : key === "groq" ? "Groq" : "IFM",
+      label: key === "nvidia" ? "NVIDIA" : key === "groq" ? "Groq" : key === "agnes" ? "Agnes" : "IFM",
       configured: keyConfigured(key),
       baseUrl: baseUrlFor(key),
       reachable,
       detail,
       modelCount: models.filter((m) => m.provider === key).length,
     });
+  }
+  // DB gateways (kira / codecraft / bynara + custom). Keys never leave the server.
+  try {
+    const gws = await listGatewaysMasked();
+    const { createAdminSupabase } = await import("./supabase/server");
+    const admin = createAdminSupabase();
+    const { data: secrets } = await admin.from("provider_gateways").select("key,base_url,api_key,enabled");
+    const secMap = new Map(((secrets ?? []) as { key: string; base_url: string; api_key: string; enabled: boolean }[]).map((s) => [s.key, s]));
+    for (const g of gws) {
+      const s = secMap.get(g.key);
+      let reachable: boolean | null = null;
+      let detail = g.has_key ? "key set" : "no key";
+      let modelCount = models.filter((m) => (m.provider as string) === g.key).length;
+      if (checkLive && s?.api_key) {
+        const p = await probeGateway(g.key, s.base_url, s.api_key);
+        reachable = p.reachable;
+        detail = p.detail;
+        if (typeof p.modelCount === "number") modelCount = Math.max(modelCount, 0);
+      }
+      out.push({
+        key: g.key,
+        label: g.label,
+        configured: !!s?.api_key,
+        baseUrl: g.base_url,
+        reachable,
+        detail,
+        modelCount,
+      });
+    }
+  } catch {
+    // gateways table missing -> built-ins only
   }
   return out;
 }
@@ -119,8 +158,10 @@ export async function permittedFallback(
 
 /** Human-friendly provider error mapping (no secrets, no internals). */
 export function friendlyProviderError(raw: string): string {
-  if (/API error 429|rate.?limit|quota|insufficient/i.test(raw))
-    return "The AI provider is rate-limited right now. Wait a few seconds and try again.";
+  if (/429|rate.?limit|too many requests/i.test(raw))
+    return "The AI provider is rate-limited right now (free-tier per-minute limit). Wait ~30 seconds and try again — the server already retried once automatically.";
+  if (/402|payment_required|insufficient|top\s?up|balance|credit|fund|wallet|quota/i.test(raw))
+    return "This model needs gateway credit — the provider balance is empty. An administrator can top up in /admin → API Lab (see the red “needs top-up” badge).";
   if (/API error 401|unauthorized|invalid.*key/i.test(raw))
     return "The AI provider rejected the server credentials. An administrator must check the provider key.";
   if (/API error 40[34]|not.?found|no longer available|end of life|does not exist/i.test(raw))

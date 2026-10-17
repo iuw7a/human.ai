@@ -55,6 +55,10 @@ export interface ModelInfo {
   plan: string;
   access_level: string;
   allowed?: boolean;
+  via_admin?: boolean;
+  is_chat_default?: boolean;
+  is_image_default?: boolean;
+  is_code_default?: boolean;
 }
 
 export function getModels(): Promise<ModelInfo[]> {
@@ -66,6 +70,25 @@ export function getModels(): Promise<ModelInfo[]> {
       return (j.models ?? []) as ModelInfo[];
     } catch {
       return [];
+    }
+  });
+}
+
+export interface ChatDefaults {
+  chat: string;
+  image: string;
+  code: string;
+}
+
+export function getChatDefaults(): Promise<ChatDefaults | null> {
+  return cached<ChatDefaults | null>("api:defaults", async () => {
+    try {
+      const r = await fetch("/api/models");
+      if (!r.ok) return null;
+      const j = await r.json();
+      return (j.defaults ?? null) as ChatDefaults | null;
+    } catch {
+      return null;
     }
   });
 }

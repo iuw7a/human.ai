@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, Lock } from "lucide-react";
 import { getModels, getSubscription } from "@/lib/subscriptionClient";
+import { prettyModelName, familyOf } from "@/lib/modelDisplay";
 
 interface ApiModel {
   id: string; name: string; vision: boolean; plan: string;
-  access_level: string; allowed?: boolean;
+  access_level: string; allowed?: boolean; via_admin?: boolean;
 }
 
 /**
@@ -25,6 +26,7 @@ export function ModelSelector({
   const [models, setModels] = useState<ApiModel[]>([]);
   const [open, setOpen] = useState(false);
   const [plan, setPlan] = useState<string>("free");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     getModels()
@@ -38,12 +40,22 @@ export function ModelSelector({
   }, []);
 
   const current = models.find((m) => m.id === value);
-  const displayName = current ? "Human AI" : value;
+  const displayName = current ? prettyModelName(current.name) : value;
+
+  const q = query.trim().toLowerCase();
+  const visible = q
+    ? models.filter(
+        (m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)
+      )
+    : models;
 
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => !v);
+          setQuery("");
+        }}
         className="inline-flex items-center gap-1.5 rounded-xl border border-ink-700 bg-ink-900 px-3 py-1.5 text-[13px] font-medium text-zinc-100 hover:border-ink-600"
         title={`AI access: ${plan} — server-verified`}
       >
@@ -58,15 +70,27 @@ export function ModelSelector({
           <span className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute left-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-white/10 bg-[#141417] shadow-2xl animate-menu-in">
             <p className="border-b border-white/10 px-4 py-2.5 text-[11px] uppercase tracking-wider text-zinc-500">
-              Your plan: {plan} · server-verified
+              Your plan: {plan} · {visible.length}/{models.length} · server-verified
             </p>
-            <div className="max-h-72 overflow-y-auto p-1.5">
+            <div className="p-1.5">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search models…"
+                className="input !py-1.5 text-xs"
+              />
+            </div>
+            <div className="max-h-72 overflow-y-auto p-1.5 pt-0">
               {models.length === 0 && (
                 <p className="px-3 py-3 text-xs text-zinc-500">Loading models…</p>
               )}
-              {models.map((m) => {
+              {models.length > 0 && visible.length === 0 && (
+                <p className="px-3 py-3 text-xs text-zinc-500">No match.</p>
+              )}
+              {visible.map((m) => {
                 const locked = m.allowed === false;
                 const active = m.id === value;
+                const fam = familyOf(m.id, m.name);
                 return (
                   <button
                     key={m.id}
@@ -74,6 +98,7 @@ export function ModelSelector({
                     onClick={() => {
                       onChange(m.id);
                       setOpen(false);
+                      setQuery("");
                     }}
                     className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors ${
                       locked
@@ -84,8 +109,21 @@ export function ModelSelector({
                     }`}
                     title={locked ? `Requires upgrade (${m.access_level})` : m.id}
                   >
+                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[13px] font-bold ring-1 ${fam.classes}`}>
+                      {fam.letter}
+                    </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">Human AI</span>
+                      <span className="block truncate font-medium">
+                        {prettyModelName(m.name)}
+                        {fam.label && (
+                          <span className="ml-1.5 text-[10px] font-normal text-zinc-500">{fam.label}</span>
+                        )}
+                        {m.via_admin && (
+                          <span className="ml-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-px text-[10px] font-medium text-sky-300">
+                            via admin
+                          </span>
+                        )}
+                      </span>
                       <span className="block text-[11px] text-zinc-500">
                         {m.access_level}
                         {m.vision ? " · vision" : " · text"}

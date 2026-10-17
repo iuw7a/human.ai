@@ -9,7 +9,7 @@ export default async function Home() {
   } = await supabase.auth.getUser();
   return (
     <AppShell>
-      <LandingInner user={user} />
+      <LandingInner />
     </AppShell>
   );
 }

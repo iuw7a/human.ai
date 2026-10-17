@@ -16,7 +16,7 @@ export default async function BotChatNewPage({ params }: { params: { slug: strin
   let isPro = false;
   try {
     const { data } = await admin.from("profiles").select("plan").eq("id", user.id).single();
-    isPro = data?.plan === "plus";
+    isPro = !!data?.plan && data.plan !== "free";
   } catch {
     isPro = false;
   }

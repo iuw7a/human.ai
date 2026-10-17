@@ -8,14 +8,20 @@ import type { DbModel } from "./admin";
  * The DB table plan_access_rules overrides the defaults below.
  */
 
-export const PLANS = ["free", "plus", "pro"] as const;
-export type Plan = (typeof PLANS)[number];
+import { PLAN_RANK, normalizePlan } from "./plan-labels";
+import type { Plan } from "./plan-labels";
 
-export const PLAN_LABELS: Record<Plan, string> = {
-  free: "Free",
-  plus: "Plus",
-  pro: "Pro",
-};
+export {
+  PLANS,
+  PLAN_LABELS,
+  PAID_PLANS,
+  PLAN_RANK,
+  isPlan,
+  isPaidPlan,
+  planLabel,
+  normalizePlan,
+} from "./plan-labels";
+export type { Plan, PaidPlan } from "./plan-labels";
 
 export const SUBSCRIPTION_STATUSES = ["free", "active", "expired", "suspended"] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
@@ -52,13 +58,11 @@ export const DEFAULT_ENTITLEMENTS: Record<Plan, AccessLevel[]> = {
   free: ["light"],
   plus: ["light", "pro"],
   pro: ["light", "pro", "high", "extra"],
+  humi_elite: ["light", "pro"],
+  humi_pro: ["light", "pro", "high"],
+  humi_extra: ["light", "pro", "high", "extra"],
+  humi_enterprises: ["light", "pro", "high", "extra"],
 };
-
-const PLAN_RANK: Record<Plan, number> = { free: 0, plus: 1, pro: 2 };
-
-export function normalizePlan(v: unknown): Plan {
-  return v === "plus" || v === "pro" ? (v as Plan) : "free";
-}
 
 export function normalizeStatus(v: unknown): SubscriptionStatus {
   return v === "active" || v === "expired" || v === "suspended" ? (v as SubscriptionStatus) : "free";

@@ -8,7 +8,7 @@ export default async function AdminVideoPage() {
   await requireAdmin();
   return (
     <div>
-      <PageHeader title="Video" sub="Text-to-video studio (Agnes Video 2.5, async). Results are not stored." />
+      <PageHeader title="Video" sub="Text-to-video studio (JSON2Video narrated movie, Agnes, HF). Results are not stored." />
       <VideoTool />
     </div>
   );

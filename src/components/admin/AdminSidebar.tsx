@@ -29,10 +29,23 @@ import {
   Home,
   Image as ImageIcon,
   Clapperboard,
+  Film,
+  AudioLines,
+  Coins,
+  Gauge,
+  Sparkles,
+  Bot,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { TeamChatSidebar } from "./team/TeamChatSidebar";
 
 const SECTIONS: { title: string; items: { href: string; label: string; icon: React.ElementType }[] }[] = [
+  {
+    title: "AI Team Workspace",
+    items: [
+      { href: "/admin/team-rema-humi", label: "Team: Humi & Rema", icon: Sparkles },
+    ],
+  },
   {
     title: "Overview",
     items: [
@@ -68,6 +81,20 @@ const SECTIONS: { title: string; items: { href: string; label: string; icon: Rea
     items: [
       { href: "/admin/tools/images", label: "Images", icon: ImageIcon },
       { href: "/admin/tools/video", label: "Video", icon: Clapperboard },
+      { href: "/admin/tools/text2code2viedo", label: "Text → Film", icon: Film },
+      { href: "/admin/tools/give-access-to-film", label: "Give Access to Film", icon: KeyRound },
+      { href: "/admin/tools/voice", label: "Voice", icon: AudioLines },
+      { href: "/admin/voice-requests", label: "Voice Tokens", icon: Coins },
+      { href: "/admin/build-access", label: "Build Access", icon: KeyRound },
+    ],
+  },
+  {
+    title: "API Lab",
+    items: [
+      { href: "/admin/api-lab", label: "API Lab", icon: Bot },
+      { href: "/admin/models/free", label: "Free Models", icon: Sparkles },
+      { href: "/admin/models/free/limit", label: "Limits", icon: Gauge },
+      { href: "/admin/usage", label: "Usage", icon: Coins },
     ],
   },
   {
@@ -98,6 +125,34 @@ export function AdminSidebar({
     await supabase.auth.signOut();
     router.push("/");
     router.refresh();
+  }
+
+  const isTeamWorkspace =
+    pathname?.startsWith("/admin/team-rema-humi") || pathname === "/admin/team";
+
+  if (isTeamWorkspace) {
+    return (
+      <>
+        <button
+          className="btn-ghost fixed left-3 top-3 z-40 border border-white/10 bg-[#050506] p-2 lg:hidden shadow-lg"
+          onClick={() => setOpen(true)}
+          aria-label="Open team chat menu"
+        >
+          <Menu size={18} />
+        </button>
+        <aside className="w-64 shrink-0 block h-screen sticky top-0 z-30 bg-[#070709] border-r border-white/10 shadow-2xl">
+          <TeamChatSidebar adminName={adminName} adminRole={adminRole} />
+        </aside>
+        {open && (
+          <div className="fixed inset-0 z-50 md:hidden">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setOpen(false)} />
+            <aside className="absolute inset-y-0 left-0 w-72 bg-[#070709] shadow-2xl h-full z-50">
+              <TeamChatSidebar adminName={adminName} adminRole={adminRole} onClose={() => setOpen(false)} />
+            </aside>
+          </div>
+        )}
+      </>
+    );
   }
 
   const body = (

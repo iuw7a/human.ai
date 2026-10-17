@@ -353,8 +353,6 @@ export function BotChatView({
       voice={voiceProp}
       statusLine={liveLine}
       placeholder={`Message ${bot.name}…`}
-      onCall={openCall}
-      callSupported={callMicOk}
     />
   );
 

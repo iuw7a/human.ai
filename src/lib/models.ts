@@ -1,8 +1,8 @@
 export interface ModelConfig {
-  /** Slug used in URLs, e.g. "kimi-k3" */
+  /** Slug used in URLs, e.g. "humi1.1-speed" */
   id: string;
-  /** Provider key, e.g. "nvidia", "groq" or "ifm" */
-  provider: "nvidia" | "groq" | "ifm";
+  /** Provider key: built-ins or DB gateway keys (kira / codecraft / bynara / gateway) */
+  provider: "nvidia" | "groq" | "ifm" | "agnes" | "kira" | "codecraft" | "bynara" | "gateway" | (string & {});
   /** Display name */
   name: string;
   /** Short description shown in UI */
@@ -15,7 +15,6 @@ export interface ModelConfig {
 }
 
 export const models: Record<string, ModelConfig> = {
-  // Public slug — neutral, no provider/model internals leak into URLs or UI.
   "humi1.1-speed": {
     id: "humi1.1-speed",
     provider: "nvidia",
@@ -26,58 +25,15 @@ export const models: Record<string, ModelConfig> = {
     streaming: true,
     maxImageSizeMB: 8,
   },
-  // Legacy slugs (existing chats/URLs keep working; same neutral display name).
-  "human-ai": {
-    id: "human-ai",
-    provider: "nvidia",
-    name: "humi1.1-speed",
-    description: "The Human AI flagship model — fast, precise, understands images.",
-    providerModelId: "meta/llama-3.2-11b-vision-instruct",
-    vision: true,
-    streaming: true,
-    maxImageSizeMB: 8,
-  },
-  // Legacy slugs (existing chats/URLs keep working; same neutral display name).
-  "llama-3.2-11b-vision": {
-    id: "llama-3.2-11b-vision",
-    provider: "nvidia",
-    name: "Human AI",
-    description: "The Human AI flagship model — fast, precise, understands images.",
-    providerModelId: "meta/llama-3.2-11b-vision-instruct",
-    vision: true,
-    streaming: true,
-    maxImageSizeMB: 8,
-  },
-  "gpt-oss-20b": {
-    id: "gpt-oss-20b",
-    provider: "nvidia",
-    name: "Human AI",
-    description: "The Human AI text model — strong reasoning, fast answers.",
-    providerModelId: "openai/gpt-oss-20b",
+  "humi.1-images": {
+    id: "humi.1-images",
+    provider: "agnes",
+    name: "humi.1 images",
+    description: "Text-to-image generation — describe it, get an image.",
+    providerModelId: "agnes-image-2.1-flash",
     vision: false,
-    streaming: true,
-    maxImageSizeMB: 8,
-  },
-  "kimi-k3": {
-    id: "kimi-k3",
-    provider: "nvidia",
-    name: "Human AI",
-    description: "Human AI flagship model — fast, precise, vision-capable.",
-    providerModelId:
-      process.env.NVIDIA_MODEL_ID ?? "moonshotai/kimi-k3",
-    vision: true,
-    streaming: true,
-    maxImageSizeMB: 8,
-  },
-  "ifm-k2": {
-    id: "ifm-k2",
-    provider: "ifm",
-    name: "Human AI",
-    description: "The Human AI large model — deep reasoning, long context.",
-    providerModelId: "IFM/K2-Horizon-375B-A23B",
-    vision: false,
-    streaming: true,
-    maxImageSizeMB: 8,
+    streaming: false,
+    maxImageSizeMB: 0,
   },
 };
 

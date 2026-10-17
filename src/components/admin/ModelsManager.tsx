@@ -91,6 +91,13 @@ export function ModelsManager() {
             <option value="nvidia">NVIDIA</option>
             <option value="groq">Groq</option>
             <option value="ifm">IFM</option>
+            <option value="agnes">Agnes (image)</option>
+            <option value="kira">Kira AI (gateway)</option>
+            <option value="codecraft">CodeCraft (gateway)</option>
+            <option value="bynara">NaraRouter (gateway)</option>
+            <option value="openrouter">OpenRouter (gateway)</option>
+            <option value="ollama">Ollama Cloud (gateway)</option>
+            <option value="xkiro">Xkiro (gateway)</option>
           </select>
           <select value={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.value, access_level: e.target.value === "free" ? "light" : e.target.value === "plus" ? "pro" : "high" })} className="input" title="Minimum plan">
             <option value="free">Free (min plan)</option>

@@ -27,7 +27,7 @@ export default async function BotChatThreadPage({
     ),
     getAccessibleBot(params.slug, user.id),
   ]);
-  const isPro = profileRes.data?.plan === "plus";
+  const isPro = !!profileRes.data?.plan && profileRes.data.plan !== "free";
   if (!isPro) {
     return (
       <AppShell>

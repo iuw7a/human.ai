@@ -2,9 +2,10 @@
 
 import { memo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, Copy, ThumbsDown, ThumbsUp, Volume2, VolumeX } from "lucide-react";
+import { Check, Copy, ImagePlus, ThumbsDown, ThumbsUp, Volume2, VolumeX } from "lucide-react";
 import { Markdown } from "../Markdown";
 import { MascotAvatar } from "./MascotAvatar";
+import ThinkingLottie from "../ThinkingLottie";
 import { BotAvatar } from "../BotAvatar";
 import type { AIStatus } from "./types";
 
@@ -110,6 +111,29 @@ function VoteButtons({ chatId, modelId, excerpt }: { chatId: string; modelId: st
   );
 }
 
+/** Marker the text model emits when the user asks about image generation. */
+export const SWITCH_TO_IMAGES_TOKEN = "[switch-to-images]";
+
+function stripSwitchToken(s: string): { text: string; showSwitch: boolean } {
+  if (!s.includes(SWITCH_TO_IMAGES_TOKEN)) return { text: s, showSwitch: false };
+  return {
+    text: s.replace(SWITCH_TO_IMAGES_TOKEN, "").replace(/\n{3,}/g, "\n\n").trim(),
+    showSwitch: true,
+  };
+}
+
+function SwitchToImagesButton({ onSwitch }: { onSwitch: () => void }) {
+  return (
+    <button
+      onClick={onSwitch}
+      className="mt-3 inline-flex items-center gap-2 rounded-full border border-accent/50 bg-accent/15 px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-accent/30"
+    >
+      <ImagePlus size={15} className="text-accent" />
+      Switch to humi.1 images
+    </button>
+  );
+}
+
 export const AssistantMessage = memo(function AssistantMessage({
   content,
   streaming,
@@ -119,6 +143,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   speak,
   onToggleSpeak,
   vote,
+  onSwitchToImages,
 }: {
   content: string;
   streaming?: boolean;
@@ -129,12 +154,16 @@ export const AssistantMessage = memo(function AssistantMessage({
   speak?: SpeakState | null;
   onToggleSpeak?: (text: string) => void;
   vote?: { chatId: string; modelId: string } | null;
+  /** When provided + the text contains [switch-to-images], a switch button renders. */
+  onSwitchToImages?: () => void;
 }) {
   const avatar = avatarPhoto ? (
     <BotAvatar src={avatarPhoto.src} name={avatarPhoto.name} size={avatarSize} accent={avatarPhoto.accent} />
   ) : (
     <MascotAvatar status={streaming ? "generating" : avatarStatus} size={avatarSize} />
   );
+  const { text: cleanContent, showSwitch } = stripSwitchToken(content);
+  const showSwitchButton = showSwitch && !streaming && !!onSwitchToImages;
   return (
     <motion.div
       {...enter}
@@ -144,14 +173,17 @@ export const AssistantMessage = memo(function AssistantMessage({
       <div className="shrink-0 pt-1">
         {avatar}
       </div>
-      <div className="min-w-0 flex-1 rounded-[22px] rounded-tl-lg border border-white/[0.06] bg-white/[0.025] px-5 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur-sm">
+      <div className="min-w-0 flex-1 rounded-[22px] rounded-tl-lg bg-white/[0.025] px-5 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur-sm">
         {streaming ? (
           <p className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-100">
-            {content}
+            {cleanContent}
             <span className="ml-1 inline-block h-4 w-[7px] animate-pulse rounded-sm bg-accent align-middle" />
           </p>
         ) : (
-          <Markdown content={content} />
+          <>
+            <Markdown content={cleanContent} />
+            {showSwitchButton && <SwitchToImagesButton onSwitch={onSwitchToImages!} />}
+          </>
         )}
         {!streaming && (
           <div className="mt-2.5 flex items-center gap-1">
@@ -182,17 +214,8 @@ export function ThinkingRow({ label = "Thinking…", avatar }: { label?: string;
       <div className="shrink-0">
         {avatar ?? <MascotAvatar status="thinking" size={36} />}
       </div>
-      <div className="flex items-center gap-2.5 rounded-[22px] rounded-tl-lg border border-white/[0.06] bg-white/[0.025] px-5 py-4">
-        <span className="flex items-center gap-1.5" aria-hidden="true">
-          {[0, 1, 2].map((i) => (
-            <motion.span
-              key={i}
-              className="h-1.5 w-1.5 rounded-full bg-zinc-500"
-              animate={{ opacity: [0.25, 1, 0.25], scale: [0.85, 1, 0.85] }}
-              transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.15 }}
-            />
-          ))}
-        </span>
+      <div className="flex items-center gap-2.5 rounded-[22px] rounded-tl-lg bg-white/[0.025] px-5 py-4">
+        <ThinkingLottie size={28} />
         <span className="text-sm text-zinc-400">{label}</span>
       </div>
     </motion.div>

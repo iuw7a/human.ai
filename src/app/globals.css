@@ -57,7 +57,11 @@ body {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-ink-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50;
   }
   .btn-send {
-    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-zinc-900 transition-all hover:bg-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500;
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500;
+    background-color: #6b1519;
+  }
+  .btn-send:hover {
+    background-color: #8a1c20;
   }
   .card {
     @apply rounded-2xl border border-ink-700 bg-ink-900;
@@ -75,7 +79,7 @@ body {
     @apply bg-ink-800 font-medium text-white;
   }
   .nav-link-active svg {
-    @apply text-accent;
+    @apply text-[#6b1519];
   }
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-900 px-3.5 py-1.5 text-[13px] text-zinc-300 transition-colors hover:border-ink-600 hover:text-white;
@@ -91,6 +95,18 @@ body {
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+}
+
+/* Build view slide-up animation */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -138,6 +154,9 @@ body {
 .prose-humanai th {
   @apply bg-ink-800 font-medium;
 }
+.prose-humanai img {
+  @apply my-4 max-h-[60vh] w-full rounded-2xl border border-white/10 object-contain;
+}
 
 @keyframes pulse-dot {
   0%,
@@ -178,7 +197,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .typing-dot,
   .animate-menu-in,
-  .animate-ad-in {
+  .animate-ad-in,
+  .chat-drop {
     animation: none !important;
   }
 }
@@ -323,4 +343,150 @@ body {
 }
 .chess-start-glow:hover {
   box-shadow: 0 8px 40px rgba(229, 72, 77, 0.4);
+}
+
+/* ---------------------------------------------------------------------------
+   Wortmarke im Footer (z. B. /platform)
+
+   Drei textgenau übereinanderliegende Ebenen:
+     1. .wm-base  — nur Kontur, ohne Füllung
+     2. .wm-fill  — Verlauf, per Maske nur rund um den Zeiger sichtbar
+     3. .wm-sheen — dünner Lichtstreifen, wandert langsam durch die Kontur
+   Position kommt aus --mx/--my, gesetzt per JS (kein React-Re-Render).
+   --------------------------------------------------------------------------- */
+.wm-wrap {
+  --mx: 50%;
+  --my: 50%;
+  --r: 0px;
+}
+.wm-text {
+  display: block;
+  white-space: nowrap;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 0.86;
+  font-size: clamp(1.9rem, 15.4vw, 14rem);
+  user-select: none;
+}
+/* Neben der Dashboard-Sidebar ist das Viewport breiter als der Inhalt, daher
+   skaliert die Wortmarke auf ihren Container statt auf 100vw. */
+@supports (container-type: inline-size) {
+  .wm-frame {
+    container-type: inline-size;
+  }
+  .wm-text {
+    font-size: clamp(1.9rem, 15.4cqw, 14rem);
+  }
+}
+.wm-base {
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.14);
+  transition: -webkit-text-stroke-color 0.45s ease;
+}
+.wm-hover .wm-base {
+  -webkit-text-stroke-color: rgba(255, 255, 255, 0.3);
+}
+.wm-layer {
+  position: absolute;
+  inset: 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.wm-fill {
+  background-image: linear-gradient(
+    170deg,
+    #ffffff 0%,
+    #ffe4e5 42%,
+    #e5484d 78%,
+    #a02a2e 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    circle var(--r) at var(--mx) var(--my),
+    #000 0%,
+    #000 42%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    circle var(--r) at var(--mx) var(--my),
+    #000 0%,
+    #000 42%,
+    transparent 100%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.wm-hover .wm-fill {
+  opacity: 1;
+}
+.wm-sheen {
+  background-image: linear-gradient(
+    100deg,
+    transparent 42%,
+    rgba(255, 255, 255, 0.38) 50%,
+    transparent 58%
+  );
+  background-size: 240% 100%;
+  opacity: 0.7;
+  animation: wm-sheen 9s linear infinite;
+}
+.wm-hover .wm-sheen {
+  animation-play-state: paused;
+  opacity: 0;
+}
+@keyframes wm-sheen {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -130% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wm-sheen {
+    animation: none;
+  }
+  .wm-base,
+  .wm-fill {
+    transition: none;
+  }
+}
+
+/* Chat: the bar drops to the bottom when the first message starts the chat. */
+@keyframes chat-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-16vh);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.chat-drop {
+  animation: chat-drop 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Global page transitions (View Transitions API) — keeps navigation feeling fast. */
+@view-transition {
+  navigation: auto;
+}
+::view-transition-old(root) {
+  animation: 0.22s ease-out both humi-fade-out;
+}
+::view-transition-new(root) {
+  animation: 0.32s cubic-bezier(0.22, 1, 0.36, 1) both humi-fade-in;
+}
+@keyframes humi-fade-out {
+  to {
+    opacity: 0;
+    transform: translateY(-24px) scale(0.98);
+  }
+}
+@keyframes humi-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
 }

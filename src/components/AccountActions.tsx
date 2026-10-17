@@ -3,8 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { PlanBadge } from "./PlanBadge";
+import { planLabel } from "@/lib/plan-labels";
 
 interface SubInfo {
   plan: string; subscriptionStatus: string; source: string | null;
@@ -12,7 +14,13 @@ interface SubInfo {
   accessLevels: string[];
 }
 
-export function AccountActions({ email }: { email: string }) {
+export function AccountActions({
+  email,
+  availablePlans = [],
+}: {
+  email: string;
+  availablePlans?: string[];
+}) {
   const router = useRouter();
   const supabase = createClient();
   const [password, setPassword] = useState("");
@@ -107,6 +115,33 @@ export function AccountActions({ email }: { email: string }) {
           <p className="mt-1 text-sm text-zinc-500">Loading subscription…</p>
         )}
       </section>
+
+      <section className="card p-6">
+        <h2 className="text-[15px] font-semibold text-white">Upgrade</h2>
+        {availablePlans.length > 0 ? (
+          <>
+            <p className="mt-1 text-sm text-zinc-500">
+              You&apos;ll be redirected to Stripe&apos;s secure checkout. Cancel anytime.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {availablePlans.map((plan) => (
+                <form key={plan} method="POST" action="/api/stripe/create-checkout-session">
+                  <input type="hidden" name="plan" value={plan} />
+                  <button type="submit" className="btn-primary">
+                    Upgrade to {planLabel(plan)}
+                  </button>
+                </form>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="mt-1 text-sm text-zinc-500">No upgrades available right now.</p>
+        )}
+        <Link href="/pricing" className="mt-3 inline-block text-sm text-zinc-400 hover:text-white">
+          See all plans →
+        </Link>
+      </section>
+
       <section className="card p-6">
         <h2 className="text-[15px] font-semibold text-white">Session</h2>
         <p className="mt-1 text-sm text-zinc-500">Signed in as {email}.</p>

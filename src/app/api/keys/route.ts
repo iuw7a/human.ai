@@ -1,6 +1,12 @@
 import { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
 import { sessionUser } from "@/lib/bots";
+import {
+  normalizeScopes,
+  scopesForSelection,
+  scopeLabel,
+  isMissingScopesColumn,
+} from "@/lib/apiKeys";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,18 +26,36 @@ export async function GET() {
   const user = await sessionUser();
   if (!user) return Response.json({ error: "Not authenticated." }, { status: 401 });
   const admin = createAdminSupabase();
-  const { data, error } = await admin
+  let query = admin
     .from("api_keys")
-    .select("id,name,prefix,enabled,usage_count,last_used_at,created_at")
+    .select("id,name,prefix,enabled,usage_count,last_used_at,created_at,scopes")
     .eq("user_id", user.id)
     .like("name", "Human AI API:%")
     .order("created_at", { ascending: false })
     .limit(20);
+  let { data, error } = await query;
+  if (error && isMissingScopesColumn(error)) {
+    // Migration supabase/api_key_scopes.sql not run yet — keys work without scopes.
+    const fb = await admin
+      .from("api_keys")
+      .select("id,name,prefix,enabled,usage_count,last_used_at,created_at")
+      .eq("user_id", user.id)
+      .like("name", "Human AI API:%")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    data = (fb.data ?? []).map((k) => ({ ...k, scopes: ["chat", "images"] }));
+    error = fb.error;
+  }
   if (error) return Response.json({ error: "Could not load keys." }, { status: 500 });
-  return Response.json({ keys: data ?? [] });
+  const keys = (data ?? []).map((k) => {
+    const scopes = normalizeScopes((k as { scopes?: unknown }).scopes);
+    return { ...k, scopes, scope_label: scopeLabel(scopes) };
+  });
+  return Response.json({ keys });
 }
 
-/** POST /api/keys {label?} — mint a key (raw shown ONCE). Max 5 active. */
+/** POST /api/keys {label?, scope?} — mint a key (raw shown ONCE). Max 5 active.
+ *  scope: "chat" (Speed only) | "images" (humi.1 images only) | "all" (default, both). */
 export async function POST(req: NextRequest) {
   const user = await sessionUser();
   if (!user) return Response.json({ error: "Not authenticated." }, { status: 401 });
@@ -45,22 +69,36 @@ export async function POST(req: NextRequest) {
   if ((count ?? 0) >= 5) {
     return Response.json({ error: "Key limit reached (5). Revoke one first." }, { status: 400 });
   }
-  const b = (await req.json().catch(() => null)) as { label?: unknown } | null;
+  const b = (await req.json().catch(() => null)) as { label?: unknown; scope?: unknown } | null;
   const label = (typeof b?.label === "string" ? b.label : "").trim().slice(0, 40) || "Default";
+  const scopes = scopesForSelection(b?.scope);
   const raw = randomKey();
-  const { data, error } = await admin
+  const row = {
+    user_id: user.id,
+    name: `Human AI API: ${label}`,
+    key_hash: await sha256Hex(raw),
+    prefix: raw.slice(0, 12),
+    enabled: true,
+    scopes,
+  };
+  let { data, error } = await admin
     .from("api_keys")
-    .insert({
-      user_id: user.id,
-      name: `Human AI API: ${label}`,
-      key_hash: await sha256Hex(raw),
-      prefix: raw.slice(0, 12),
-      enabled: true,
-    })
+    .insert(row)
     .select("id,name,prefix,created_at")
     .single();
+  if (error && isMissingScopesColumn(error)) {
+    // Migration not run yet — store the key without scopes (acts as full access).
+    const { scopes: _drop, ...legacyRow } = row;
+    const fb = await admin
+      .from("api_keys")
+      .insert(legacyRow)
+      .select("id,name,prefix,created_at")
+      .single();
+    data = fb.data;
+    error = fb.error;
+  }
   if (error || !data) return Response.json({ error: "Could not create key." }, { status: 500 });
-  return Response.json({ key: data, raw });
+  return Response.json({ key: { ...data, scopes, scope_label: scopeLabel(scopes) }, raw });
 }
 
 /** DELETE /api/keys?id= — revoke my key. */

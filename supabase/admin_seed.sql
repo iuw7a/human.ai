@@ -49,7 +49,7 @@ insert into public.profiles (id, name, email, role, plan, status)
 select id, 'admin', 'admin@human.ai', 'admin', 'plus', 'active'
 from auth.users where email = 'admin@human.ai'
 on conflict (id) do update set role = 'admin', plan = 'plus', status = 'active';
-
--- Promote any existing account to admin instead (preferred for real owners):
---   update public.profiles set role = 'admin', plan = 'plus'
---   where email = 'you@example.com';
+ yo nga 
+ yes bruuhh
+ ich mach den backend und mach du den frontend okay? 
+ okay got it man 

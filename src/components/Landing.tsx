@@ -1,166 +1,137 @@
 "use client";
 
+import { useCallback, useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { KeyRound } from "lucide-react";
-import type { PendingImage } from "@/components/ChatInput";
-import { Composer } from "@/components/ai/Composer";
-import { EmptyState } from "@/components/ai/EmptyState";
-import { MascotAvatar } from "@/components/ai/MascotAvatar";
-import { useVoice } from "@/components/ai/useVoice";
-import type { ChatMode } from "@/components/ModeSelector";
-import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { WordmarkFooter } from "@/components/site/WordmarkFooter";
 
-function newChatId() {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID().replace(/-/g, "").slice(0, 12)
-    : Math.random().toString(36).slice(2, 14);
-}
-
-function modeFromUrl(): ChatMode {
-  try {
-    const m = new URLSearchParams(window.location.search).get("mode");
-    if (m === "agent" || m === "computer-use") return m;
-  } catch {
-    // ignore
-  }
-  return "chat";
-}
-
-function goalFromUrl(): string {
-  try {
-    return new URLSearchParams(window.location.search).get("goal") ?? "";
-  } catch {
-    return "";
-  }
-}
-
-export default function LandingInner({ user }: { user: SupabaseUser | null }) {
+export default function LandingInner() {
   const router = useRouter();
-  const [sending, setSending] = useState(false);
-  const [bgOk, setBgOk] = useState(false);
-  // Entry-point mode (/?mode=agent, /?mode=computer-use). ONE chat is created on send.
-  const [mode, setMode] = useState<ChatMode>("chat");
-  const [initialGoal] = useState(() => goalFromUrl());
-  const [voiceText, setVoiceText] = useState("");
-  const voice = useVoice({ onTranscript: (t) => setVoiceText((prev) => (prev ? `${prev} ${t}` : t)) });
-  const [callMicOk] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      (("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window)) &&
-      !!navigator.mediaDevices?.getUserMedia
-  );
+  const [value, setValue] = useState("");
+  const submittingRef = useRef(false);
+  const [placeholder, setPlaceholder] = useState("Ask Humi");
+  const [placeholderVisible, setPlaceholderVisible] = useState(true);
+  const [leaving, setLeaving] = useState(false);
 
-  useEffect(() => {
-    setMode(modeFromUrl());
-  }, []);
-
-  function pickMode(m: ChatMode) {
-    setMode(m);
+  const submit = useCallback(() => {
+    const text = value.trim();
+    if (!text || submittingRef.current) return;
+    submittingRef.current = true;
     try {
-      const url = m === "chat" ? "/" : `/?mode=${m}`;
-      window.history.replaceState(null, "", url);
+      sessionStorage.setItem("humanai-goal", text);
     } catch {
       // ignore
     }
-  }
+    setLeaving(true);
+    setTimeout(() => {
+      router.push(`/chat/new?goal=${encodeURIComponent(text)}`);
+    }, 120);
+  }, [value, router]);
 
   useEffect(() => {
-    const probe = new Image();
-    probe.onload = () => setBgOk(true);
-    probe.src = "/chat-bg.png";
+    const ideas = ["Ask Humi", "Generate an image…", "Build a website…", "Explain anything…", "Write code…"];
+    let i = 0;
+    const tick = () => {
+      setPlaceholderVisible(false);
+      setTimeout(() => {
+        i = (i + 1) % ideas.length;
+        setPlaceholder(ideas[i]);
+        setPlaceholderVisible(true);
+      }, 220);
+    };
+    const id = setInterval(tick, 2400);
+    return () => clearInterval(id);
   }, []);
 
-  function handleSend(text: string, images: PendingImage[]) {
-    if (!text.trim() && images.length === 0) return;
-    const chatId = newChatId();
-    try {
-      sessionStorage.setItem(
-        `humanai-pending-${chatId}`,
-        JSON.stringify({ text, images, mode })
-      );
-    } catch {
-      // storage unavailable — chat page will show empty state
-    }
-    setSending(true);
-    router.push(`/chat/${chatId}`);
-  }
-
-  function handleCall() {
-    // Voice calls run in chat mode: mint the thread, then open it with ?call=1.
-    router.push(`/chat/${newChatId()}?call=1`);
-  }
-
   return (
-    <div className="relative flex h-full flex-col bg-black">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        {bgOk && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src="/chat-bg.png"
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        )}
-      </div>
-      <div className="relative z-10 flex items-center justify-end px-4 py-2.5 sm:px-6">
-        {!user && (
-          <div className="flex items-center gap-2 pt-10 lg:pt-0">
-            <a href="/login" className="btn-ghost text-[13px]">
-              Log in
-            </a>
-            <a href="/signup" className="btn-primary !px-3 !py-1.5 text-[13px]">
-              Sign up
-            </a>
+    <div
+      className={`relative flex h-full flex-col overflow-hidden bg-black px-4 transition-all duration-300 ease-out ${
+        leaving ? "opacity-0 -translate-y-6 scale-[0.97]" : "opacity-100 translate-y-0 scale-100"
+      }`}
+    >
+      {/* Background image */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/land.bg.jpg"
+        alt=""
+        aria-hidden
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-50"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-accent/[0.18] blur-[110px]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-28 -right-28 h-[26rem] w-[26rem] rounded-full bg-accent/[0.16] blur-[120px]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute top-1/4 right-1/3 h-56 w-56 rounded-full bg-accent/[0.14] blur-[80px]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute bottom-1/3 left-1/4 h-44 w-44 rounded-full bg-accent/[0.12] blur-[70px]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 left-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/[0.10] blur-[90px]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse at 50% 0%, rgba(229,72,77,0.12), transparent 55%), radial-gradient(ellipse at 50% 100%, rgba(229,72,77,0.10), transparent 55%)",
+        }}
+      />
+
+      <div className="relative flex flex-1 items-center justify-center pt-[18vh]">
+        <div className="w-full max-w-xl animate-[fadeSlideUp_0.6s_cubic-bezier(0.22,1,0.36,1)_both]">
+          <div className="mb-10 text-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.webp"
+              alt="Human AI logo"
+              className="mx-auto mb-4 h-14 w-14 object-cover"
+            />
+            <h1 className="text-[2rem] font-semibold tracking-tight text-white sm:text-[2.5rem]">
+              Human AI
+            </h1>
+            <p className="mt-1.5 text-[15px] text-zinc-500">
+              Ask anything. Generate images. Build things.
+            </p>
           </div>
-        )}
-      </div>
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-6">
-        <div className="w-full max-w-2xl">
-          <EmptyState
-            avatar={<MascotAvatar status={voice.listening ? "listening" : "idle"} size={120} />}
-            title="How can I help you?"
-            subtitle="Ask anything, command your computer, or send an agent to browse for you."
-          />
-          <div className="mt-6">
-            <Composer
-              onSend={handleSend}
-              sending={sending}
-              mode={mode}
-              onModeChange={pickMode}
-              initialText={initialGoal}
-              voiceText={voiceText}
-              onVoiceTextConsumed={() => setVoiceText("")}
-              voice={{
-                listening: voice.listening,
-                supported: voice.sttSupported,
-                onMic: () => (voice.listening ? voice.stopListening() : voice.startListening()),
+
+          <div className="rounded-[20px] bg-white/[0.04] px-5 py-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-2xl transition-all duration-200 focus-within:bg-white/[0.06] focus-within:shadow-[0_8px_32px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.06)]">
+            <textarea
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  submit();
+                }
               }}
-              onCall={mode === "chat" ? handleCall : undefined}
-              callSupported={callMicOk}
-              placeholder={
-                mode === "agent"
-                  ? "Describe the task, e.g. Research this company…"
-                  : mode === "computer-use"
-                    ? "Describe what to do, e.g. Open ChatGPT…"
-                    : "Ask Human AI anything..."
-              }
+              placeholder={placeholder}
+              autoFocus
+              aria-label="Message Human AI"
+              rows={1}
+              className={`max-h-[160px] w-full resize-none bg-transparent text-[17px] leading-7 text-white placeholder:text-zinc-500 focus:outline-none transition-opacity duration-200 ${placeholderVisible ? "placeholder:opacity-100" : "placeholder:opacity-0"}`}
             />
           </div>
+          <p className="mt-4 text-center text-[11px] text-zinc-600">
+            Press Return to send.
+          </p>
         </div>
       </div>
-      <footer className="relative z-10 flex flex-wrap items-center justify-center gap-2 px-4 py-4 text-xs text-zinc-500">
-        <span className="px-2">Human AI</span>
-        <a href="/platform/about" className="px-2 hover:text-zinc-300">About</a>
-        <a href="/terms" className="px-2 hover:text-zinc-300">Terms</a>
-        <a href="/platform" className="px-2 hover:text-zinc-300">Platform</a>
-        <a
-          href="/platform/api"
-          className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.04] px-3.5 py-1.5 font-medium text-zinc-200 transition-colors hover:border-accent/60 hover:text-white"
-        >
-          <KeyRound size={12} /> API Keys
-        </a>
-      </footer>
+
+      <div className="relative z-10 w-full shrink-0">
+        <WordmarkFooter showBorder={false} />
+      </div>
     </div>
   );
 }

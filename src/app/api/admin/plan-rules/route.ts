@@ -19,7 +19,7 @@ export async function PUT(req: NextRequest) {
   try {
     const b = (await req.json()) as { plan?: string; access_levels?: unknown };
     if (!b.plan || !(PLANS as readonly string[]).includes(b.plan)) {
-      return Response.json({ error: "plan must be free|plus|pro." }, { status: 400 });
+      return Response.json({ error: `plan must be one of: ${PLANS.join(" | ")}.` }, { status: 400 });
     }
     if (!Array.isArray(b.access_levels) || b.access_levels.length === 0) {
       return Response.json({ error: "access_levels must be a non-empty array." }, { status: 400 });

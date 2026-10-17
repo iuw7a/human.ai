@@ -162,21 +162,35 @@ function normalizeAccessLevel(v: unknown): DbModel["access_level"] {
   return v === "pro" || v === "high" || v === "extra" ? v : "light";
 }
 
+const KNOWN_PROVIDERS = new Set(["nvidia", "groq", "ifm", "agnes", "kira", "codecraft", "bynara", "openrouter", "ollama", "xkiro", "gateway"]);
+
+function normalizeProvider(v: unknown): DbModel["provider"] {
+  const s = String(v ?? "nvidia");
+  if (KNOWN_PROVIDERS.has(s)) return s as DbModel["provider"];
+  return "nvidia" as DbModel["provider"];
+}
+
 /** DB-backed model registry (falls back to code registry if table missing). */
 export async function listDbModels(): Promise<DbModel[]> {
+  const codeFallback: DbModel[] = Object.values(codeModels).map((m, i) => ({
+    ...m,
+    enabled: true,
+    plan: "free" as const,
+    access_level: "light" as const,
+    sort: i,
+    is_default: m.id === DEFAULT_MODEL_ID,
+  }));
   try {
     const admin = createAdminSupabase();
     const { data, error } = await admin
       .from("admin_models")
       .select("*")
-      .order("sort", { ascending: true });
+      .order("sort", { ascending: true })
+      .limit(1000);
     if (error || !data || data.length === 0) throw new Error("fallback");
-    return data.map((m) => ({
+    const db: DbModel[] = data.map((m) => ({
       id: m.slug,
-      provider: (m.provider === "groq" ? "groq" : m.provider === "ifm" ? "ifm" : "nvidia") as
-        | "nvidia"
-        | "groq"
-        | "ifm",
+      provider: normalizeProvider(m.provider),
       name: m.name,
       description: "",
       providerModelId: m.provider_model_id,
@@ -192,15 +206,15 @@ export async function listDbModels(): Promise<DbModel[]> {
       sort: m.sort ?? 0,
       is_default: !!m.is_default,
     }));
+    // Merge code-only models (e.g. humi.1-images) so they show up
+    // even when the DB table was seeded before they existed.
+    const seen = new Set(db.map((m) => m.id));
+    for (const c of codeFallback) {
+      if (!seen.has(c.id)) db.push(c);
+    }
+    return db;
   } catch {
-    return Object.values(codeModels).map((m, i) => ({
-      ...m,
-      enabled: true,
-      plan: "free" as const,
-      access_level: "light" as const,
-      sort: i,
-      is_default: m.id === DEFAULT_MODEL_ID,
-    }));
+    return codeFallback;
   }
 }
 
@@ -226,8 +240,8 @@ export async function activeAnnouncements(
   kind?: "banner" | "modal" | "notice"
 ) {
   // Speed: announcements change rarely (admin-edited) but are fetched on EVERY
-  // page via AppShell (3 queries: banner+modal+notice). One shared fetch with
-  // a 60 s in-memory TTL replaces 3 sequential DB round-trips.
+  // page via AppShell. One shared fetch with a 60 s in-memory TTL replaces
+  // up to 3 sequential DB round-trips.
   const now = Date.now();
   if (!annCache || now - annCache.at > ANN_TTL_MS) {
     try {
