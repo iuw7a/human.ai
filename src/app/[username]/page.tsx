@@ -59,9 +59,12 @@ export default async function PublicBotPage({ params }: { params: { username: st
   let conversations = 0;
   let messages = 0;
   try {
-    const convs = await admin.from("bot_conversations").select("id", { count: "exact", head: true }).eq("bot_id", bot.id);
+    // Speed: both counts in parallel (was: 2 sequential DB round-trips).
+    const [convs, msgs] = await Promise.all([
+      admin.from("bot_conversations").select("id", { count: "exact", head: true }).eq("bot_id", bot.id),
+      admin.from("bot_messages").select("id", { count: "exact", head: true }).eq("bot_id", bot.id),
+    ]);
     conversations = convs.count ?? 0;
-    const msgs = await admin.from("bot_messages").select("id", { count: "exact", head: true }).eq("bot_id", bot.id);
     messages = msgs.count ?? 0;
   } catch {
     // stats optional

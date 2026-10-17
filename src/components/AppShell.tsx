@@ -38,11 +38,12 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     plan = profileRes.data?.plan === "plus" ? "plus" : "free";
   }
 
-  const [banners, modals, notices] = await Promise.all([
-    activeAnnouncements(plan, "banner"),
-    activeAnnouncements(plan, "modal"),
-    activeAnnouncements(plan, "notice"),
-  ]);
+  // Speed: single shared fetch (60 s cached) — split by kind in memory
+  // instead of 3 sequential DB round-trips.
+  const allAnnouncements = await activeAnnouncements(plan);
+  const banners = allAnnouncements.filter((a) => a.kind === "banner");
+  const modals = allAnnouncements.filter((a) => a.kind === "modal");
+  const notices = allAnnouncements.filter((a) => a.kind === "notice");
 
   return (
     <div className="flex h-screen overflow-hidden bg-black">

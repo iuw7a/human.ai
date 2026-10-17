@@ -19,13 +19,15 @@ export default async function BotChatThreadPage({
   if (!user) redirect(`/login?next=/bot/${params.slug}/chat/${params.id}`);
 
   const admin = createAdminSupabase();
-  let isPro = false;
-  try {
-    const { data } = await admin.from("profiles").select("plan").eq("id", user.id).single();
-    isPro = data?.plan === "plus";
-  } catch {
-    isPro = false;
-  }
+  // Speed: profile + bot resolve in parallel (was: 2 sequential DB round-trips).
+  const [profileRes, probe] = await Promise.all([
+    admin.from("profiles").select("plan").eq("id", user.id).single().then(
+      (r) => r,
+      () => ({ data: null as { plan?: string } | null })
+    ),
+    getAccessibleBot(params.slug, user.id),
+  ]);
+  const isPro = profileRes.data?.plan === "plus";
   if (!isPro) {
     return (
       <AppShell>
@@ -34,7 +36,6 @@ export default async function BotChatThreadPage({
     );
   }
 
-  const probe = await getAccessibleBot(params.slug, user.id);
   if (!probe) redirect("/");
   const bot = probe.bot;
   const isOwner = probe.owner;

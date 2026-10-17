@@ -18,8 +18,11 @@ export default async function ChatPage({ params }: PageProps) {
   let modelId = DEFAULT_MODEL_ID;
   let initialMessages: Awaited<ReturnType<typeof loadChatHistory>> = [];
   if (user) {
-    modelId = await resolveChatModel(chatId, user.id, DEFAULT_MODEL_ID);
-    initialMessages = await loadChatHistory(chatId, user.id);
+    // Speed: model lookup + message history in parallel (was: 2 sequential DB round-trips).
+    [modelId, initialMessages] = await Promise.all([
+      resolveChatModel(chatId, user.id, DEFAULT_MODEL_ID),
+      loadChatHistory(chatId, user.id),
+    ]);
   }
 
   return (

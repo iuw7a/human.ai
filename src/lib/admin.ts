@@ -214,27 +214,38 @@ export async function defaultDbModelSlug(): Promise<string> {
   return all.find((m) => m.is_default && m.enabled)?.id ?? DEFAULT_MODEL_ID;
 }
 
+const ANN_TTL_MS = 60_000;
+let annCache: {
+  at: number;
+  rows: { id: string; title: string; message: string; image_url: string | null; link_url: string | null; audience: string; kind: string }[];
+} | null = null;
+
 /** Active announcements/notices for an audience (public, server-side). */
 export async function activeAnnouncements(
   audience: "all" | "free" | "plus",
   kind?: "banner" | "modal" | "notice"
 ) {
-  try {
-    const admin = createAdminSupabase();
-    const now = new Date().toISOString();
-    let q = admin
-      .from("announcements")
-      .select("id,title,message,image_url,link_url,audience,kind")
-      .eq("active", true)
-      .or(`starts_at.is.null,starts_at.lte.${now},ends_at.is.null,ends_at.gte.${now}`)
-      .order("created_at", { ascending: false })
-      .limit(10);
-    if (kind) q = q.eq("kind", kind);
-    const { data } = await q;
-    return (data ?? []).filter(
-      (a) => a.audience === "all" || a.audience === audience
-    );
-  } catch {
-    return [];
+  // Speed: announcements change rarely (admin-edited) but are fetched on EVERY
+  // page via AppShell (3 queries: banner+modal+notice). One shared fetch with
+  // a 60 s in-memory TTL replaces 3 sequential DB round-trips.
+  const now = Date.now();
+  if (!annCache || now - annCache.at > ANN_TTL_MS) {
+    try {
+      const admin = createAdminSupabase();
+      const iso = new Date().toISOString();
+      const { data } = await admin
+        .from("announcements")
+        .select("id,title,message,image_url,link_url,audience,kind")
+        .eq("active", true)
+        .or(`starts_at.is.null,starts_at.lte.${iso},ends_at.is.null,ends_at.gte.${iso}`)
+        .order("created_at", { ascending: false })
+        .limit(30);
+      annCache = { at: now, rows: data ?? [] };
+    } catch {
+      return [];
+    }
   }
+  return (annCache.rows ?? []).filter(
+    (a) => (!kind || a.kind === kind) && (a.audience === "all" || a.audience === audience)
+  );
 }
