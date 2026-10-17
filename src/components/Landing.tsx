@@ -2,20 +2,26 @@
 
 import { useCallback, useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowUp, Loader2 } from "lucide-react";
 import { WordmarkFooter } from "@/components/site/WordmarkFooter";
 
 export default function LandingInner() {
   const router = useRouter();
   const [value, setValue] = useState("");
   const submittingRef = useRef(false);
+  const areaRef = useRef<HTMLTextAreaElement>(null);
   const [placeholder, setPlaceholder] = useState("Ask Humi");
   const [placeholderVisible, setPlaceholderVisible] = useState(true);
   const [leaving, setLeaving] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  const hasText = value.trim().length > 0;
 
   const submit = useCallback(() => {
     const text = value.trim();
     if (!text || submittingRef.current) return;
     submittingRef.current = true;
+    setSending(true);
     try {
       sessionStorage.setItem("humanai-goal", text);
     } catch {
@@ -26,6 +32,13 @@ export default function LandingInner() {
       router.push(`/chat/new?goal=${encodeURIComponent(text)}`);
     }, 120);
   }, [value, router]);
+
+  function autoGrow() {
+    const el = areaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  }
 
   useEffect(() => {
     const ideas = ["Ask Humi", "Generate an image…", "Build a website…", "Explain anything…", "Write code…"];
@@ -107,21 +120,59 @@ export default function LandingInner() {
           </div>
 
           <div className="rounded-[20px] bg-white/[0.04] px-5 py-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-2xl transition-all duration-200 focus-within:bg-white/[0.06] focus-within:shadow-[0_8px_32px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.06)]">
-            <textarea
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
+            {/* Send button row: textarea + round send button (like the sketch) */}
+            <div className="group/landingbar flex items-end gap-3">
+              <textarea
+                ref={areaRef}
+                value={value}
+                onChange={(e) => {
+                  setValue(e.target.value);
+                  autoGrow();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+                placeholder={placeholder}
+                autoFocus
+                aria-label="Message Human AI"
+                rows={1}
+                className={`max-h-[160px] min-h-[28px] flex-1 resize-none bg-transparent text-[17px] leading-7 text-white placeholder:text-zinc-500 focus:outline-none transition-opacity duration-200 ${placeholderVisible ? "placeholder:opacity-100" : "placeholder:opacity-0"}`}
+              />
+              <button
+                type="button"
+                onClick={submit}
+                disabled={!hasText || sending}
+                aria-label="Send message"
+                title="Send"
+                className={[
+                  "landing-send mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white",
+                  "transition-all duration-300 ease-out",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+                  hasText && !sending
+                    ? "scale-100 cursor-pointer bg-[#6b1519] opacity-100 shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_6px_20px_rgba(107,21,25,0.55)] hover:scale-105 hover:bg-[#8a1c20] hover:shadow-[0_0_0_1px_rgba(255,255,255,0.12),0_8px_28px_rgba(138,28,32,0.65)] active:scale-95"
+                    : "scale-90 cursor-not-allowed bg-white/[0.07] text-zinc-500 opacity-60",
+                  sending ? "animate-pulse" : "",
+                ].join(" ")}
+                style={
+                  hasText && !sending
+                    ? { animation: "landing-send-in 0.28s cubic-bezier(0.22,1,0.36,1) both" }
+                    : undefined
                 }
-              }}
-              placeholder={placeholder}
-              autoFocus
-              aria-label="Message Human AI"
-              rows={1}
-              className={`max-h-[160px] w-full resize-none bg-transparent text-[17px] leading-7 text-white placeholder:text-zinc-500 focus:outline-none transition-opacity duration-200 ${placeholderVisible ? "placeholder:opacity-100" : "placeholder:opacity-0"}`}
-            />
+              >
+                {sending ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <ArrowUp
+                    size={19}
+                    strokeWidth={2.5}
+                    className={`transition-transform duration-300 ${hasText ? "translate-y-0 opacity-100" : "-translate-y-0.5 opacity-70"}`}
+                  />
+                )}
+              </button>
+            </div>
           </div>
           <p className="mt-4 text-center text-[11px] text-zinc-600">
             Press Return to send.
